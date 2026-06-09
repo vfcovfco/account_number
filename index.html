@@ -247,6 +247,24 @@ const STATUS_ORDER = [
   "提款中"
 ];
 
+// 舊狀態名稱對照新名稱
+const STATUS_MIGRATE = {
+  "+0":    "考試+0",
+  "+1":    "考試+1",
+  "出金0": "出金0（零扣打）",
+  "出金1": "出金1（有3+0/洗餘額）",
+  "出金2": "出金2（洗300+1）",
+  "出金3": "出金3（洗300+2）",
+  "出金4": "出金4（洗300+3）",
+  "出金5": "出金5（洗300+4）",
+  "提領中":"提款中"
+};
+
+function migrateStatus(st){
+  if(!st) return st;
+  return STATUS_MIGRATE[st] || st;
+}
+
 function chipCls(st){
   const m={
     "考試+0":"chip-exam0","考試+1":"chip-exam1",
@@ -270,7 +288,7 @@ function initFB(){
         const toArr = v => !v ? [] : Array.isArray(v) ? v.filter(Boolean) : Object.values(v).filter(Boolean);
         S.members   = Array.isArray(data.members)   ? data.members   : S.members;
         S.platforms = Array.isArray(data.platforms) ? data.platforms : S.platforms;
-        S.accounts  = toArr(data.accounts);
+        S.accounts  = toArr(data.accounts).map(a=>({...a, status: migrateStatus(a.status)}));
         S.ledger    = toArr(data.ledger);
         S.changelog = toArr(data.changelog);
         localSave(); render();
