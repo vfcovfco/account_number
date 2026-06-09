@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>帳號追蹤系統</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f4f8;color:#1a1a2e;min-height:100vh}
+.topbar{background:#1F3864;color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;gap:8px;flex-wrap:wrap}
+.topbar h1{font-size:15px;font-weight:500;white-space:nowrap}
+.topbar-right{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;margin-right:4px;transition:background .3s}
+.sync-dot.ok{background:#86efac}.sync-dot.err{background:#fca5a5}.sync-dot.syncing{background:#fde68a;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.sync-label{font-size:11px;color:rgba(255,255,255,.7)}
+.container{max-width:1000px;margin:0 auto;padding:16px}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.stat{background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.stat-label{font-size:11px;color:#6b7280;margin-bottom:4px}
+.stat-val{font-size:24px;font-weight:600;color:#1F3864}
+.tabs{display:flex;background:#fff;border-radius:10px;padding:4px;gap:4px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.tab{flex:1;padding:8px;font-size:12px;cursor:pointer;color:#6b7280;border:none;background:none;border-radius:7px;font-family:inherit;transition:all .15s;white-space:nowrap}
+.tab.active{background:#1F3864;color:#fff;font-weight:500}
+.view{display:none}.view.active{display:block}
+.view-toggle{display:flex;gap:6px;margin-bottom:12px}
+.vtbtn{padding:6px 14px;font-size:12px;border-radius:8px;cursor:pointer;font-family:inherit;border:1px solid #e5e7eb;background:#fff;color:#6b7280;transition:all .1s}
+.vtbtn.active{background:#1F3864;color:#fff;border-color:#1F3864}
+.plat-block{background:#fff;border-radius:10px;overflow:hidden;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.plat-hdr{padding:12px 16px;color:#fff;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500}
+.status-group{border-bottom:1px solid #f3f4f6;padding:10px 16px}
+.status-group:last-child{border-bottom:none}
+.status-grp-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.acc-tbl-hdr{display:grid;grid-template-columns:120px 90px 130px 1fr 20px;gap:8px;padding:3px 8px;font-size:11px;color:#9ca3af;font-weight:500}
+.acc-row{display:grid;grid-template-columns:120px 90px 130px 1fr 20px;gap:8px;padding:8px;border-radius:8px;cursor:pointer;align-items:center;border:1px solid transparent;transition:all .1s}
+.acc-row:hover{background:#f8fafc;border-color:#e5e7eb}
+.chip{padding:3px 8px;border-radius:99px;font-size:11px;font-weight:500;border:1px solid transparent;display:inline-block;white-space:nowrap}
+.chip-exam0{background:#FFF9C4;color:#7D6608;border-color:#F9E79F}
+.chip-exam1{background:#FFE0B2;color:#784212;border-color:#FFCC80}
+.chip-ex0z{background:#E8F5E9;color:#2E7D32;border-color:#A5D6A7}
+.chip-ex0n{background:#FFCCBC;color:#BF360C;border-color:#FFAB91}
+.chip-ex1{background:#C8E6C9;color:#1B5E20;border-color:#81C784}
+.chip-ex2{background:#A5D6A7;color:#1B5E20;border-color:#66BB6A}
+.chip-ex3{background:#81C784;color:#1B5E20;border-color:#4CAF50}
+.chip-ex4{background:#66BB6A;color:#fff;border-color:#43A047}
+.chip-ex5{background:#43A047;color:#fff;border-color:#2E7D32}
+.chip-withdraw{background:#E3F2FD;color:#0D47A1;border-color:#90CAF9}
+.chip-dead{background:#f3f4f6;color:#9ca3af;text-decoration:line-through;opacity:.6}
+.ledger-wrap{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:10px 12px;font-size:11px;font-weight:500;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap;margin:1px}
+.bwin{background:#dcfce7;color:#166534}
+.blose{background:#fee2e2;color:#991b1b}
+.bkeep{background:#fff3cd;color:#856404}
+.cfg-box{background:#fff;border-radius:10px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.cfg-box h3{font-size:13px;font-weight:500;margin-bottom:12px;color:#374151;padding-bottom:8px;border-bottom:1px solid #f3f4f6}
+.cfg-row{margin-bottom:12px}
+.cfg-row label{display:block;font-size:12px;color:#6b7280;margin-bottom:4px}
+.cfg-row input{width:100%;padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;outline:none;font-family:inherit}
+.s-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f9fafb}
+.s-row:last-of-type{border-bottom:none}
+.s-name{font-size:13px;font-weight:500}
+.s-sub{font-size:11px;color:#9ca3af}
+.input-row{display:flex;gap:8px;margin-top:10px}
+.input-row input{flex:1;padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;outline:none}
+.btn{padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;border:1px solid #e5e7eb;background:#fff;color:#374151;display:inline-flex;align-items:center;gap:5px;transition:all .1s;white-space:nowrap}
+.btn:hover{background:#f3f4f6}
+.btn-p{background:#1F3864;color:#fff;border-color:#1F3864}
+.btn-p:hover{background:#162a4e}
+.btn-d{background:#fee2e2;color:#991b1b;border-color:#fecaca}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;padding:16px}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:12px;padding:20px;width:min(560px,100%);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal h2{font-size:15px;font-weight:500;margin-bottom:16px}
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;color:#6b7280;margin-bottom:4px}
+.form-row select,.form-row input[type=text]{width:100%;padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-family:inherit;outline:none}
+.form-row select:focus,.form-row input:focus{border-color:#1F3864}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.s-box{background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid #e5e7eb}
+.s-box-label{font-size:11px;font-weight:600;letter-spacing:.4px;margin-bottom:8px;color:#374151}
+.acc-result-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;padding:8px;border-radius:8px;background:#f9fafb;margin-bottom:6px;border:1px solid #e5e7eb}
+.acc-result-row label{font-size:11px;color:#6b7280;margin-bottom:3px;display:block}
+.acc-result-row select,.acc-result-row input{width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;font-family:inherit}
+.acc-info-display{font-size:12px;padding:7px 10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;color:#374151;line-height:1.5;min-height:34px}
+.form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.hint{font-size:11px;margin-top:4px;padding:4px 8px;border-radius:6px}
+.hint-warn{background:#fef9ec;color:#92400e;border:1px solid #fde68a}
+.hint-ok{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.toast{position:fixed;bottom:20px;right:20px;background:#1F3864;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none;max-width:320px}
+.toast.show{opacity:1}
+.lock{position:fixed;inset:0;background:#1F3864;display:flex;align-items:center;justify-content:center;z-index:9999}
+.lock-card{background:#fff;border-radius:16px;padding:36px 32px;width:min(340px,90vw);text-align:center}
+.lock-icon{font-size:34px;margin-bottom:14px}
+.lock-title{font-size:19px;font-weight:600;color:#1F3864;margin-bottom:5px}
+.lock-sub{font-size:13px;color:#9ca3af;margin-bottom:24px}
+.lock-input{width:100%;padding:12px;border:2px solid #e5e7eb;border-radius:10px;font-size:20px;text-align:center;letter-spacing:8px;outline:none;font-family:inherit;margin-bottom:10px}
+.lock-input:focus{border-color:#1F3864}
+.lock-btn{width:100%;padding:11px;background:#1F3864;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit}
+.lock-err{font-size:12px;color:#ef4444;margin-top:6px;min-height:16px}
+.empty{text-align:center;padding:32px;color:#9ca3af;font-size:13px}
+.date-tag{font-size:10px;color:#9ca3af;background:#f3f4f6;padding:1px 6px;border-radius:4px;white-space:nowrap}
+.date-tag.recent{background:#dcfce7;color:#166534}
+.change-log{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.change-log-row{display:grid;grid-template-columns:110px 80px 80px 100px 100px 1fr;gap:8px;padding:9px 14px;border-bottom:1px solid #f3f4f6;font-size:12px;align-items:center}
+.change-log-row:last-child{border-bottom:none}
+.change-log-hdr{background:#f9fafb;font-size:11px;font-weight:500;color:#6b7280}
+@media(max-width:600px){
+  .stat-row{grid-template-columns:1fr 1fr}
+  .two-col{grid-template-columns:1fr}
+  .three-col{grid-template-columns:1fr}
+  .acc-tbl-hdr,.acc-row{grid-template-columns:100px 80px 110px 1fr 16px}
+  .change-log-row{grid-template-columns:1fr 1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="lock" id="lock">
+  <div class="lock-card">
+    <div class="lock-icon">🔐</div>
+    <div class="lock-title">帳號追蹤系統</div>
+    <div class="lock-sub">請輸入密碼以繼續</div>
+    <input class="lock-input" type="password" id="lock-input" maxlength="10" placeholder="••••••" onkeydown="if(event.key==='Enter')checkPw()" autofocus />
+    <button class="lock-btn" onclick="checkPw()">登入</button>
+    <div class="lock-err" id="lock-err"></div>
+  </div>
+</div>
+
+<div class="topbar">
+  <h1>📊 帳號追蹤系統</h1>
+  <div class="topbar-right">
+    <span class="sync-dot" id="sync-dot"></span>
+    <span class="sync-label" id="sync-label">連線中...</span>
+    <button class="btn btn-sm" onclick="openModal('match')" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">＋ 對沖</button>
+    <button class="btn btn-sm" onclick="openModal('addAcc')" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">＋ 帳號</button>
+    <button class="btn btn-sm" onclick="openModal('changeAcc')" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">🔄 帳號異動</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="stat-row" id="stats"></div>
+  <div class="tabs">
+    <button class="tab active" data-tab="overview" onclick="switchTab(this)">帳號總覽</button>
+    <button class="tab" data-tab="ledger" onclick="switchTab(this)">流水帳</button>
+    <button class="tab" data-tab="changelog" onclick="switchTab(this)">帳號異動紀錄</button>
+    <button class="tab" data-tab="settings" onclick="switchTab(this)">設定</button>
+  </div>
+  <div id="tab-overview" class="view active">
+    <div class="view-toggle">
+      <button class="vtbtn active" id="vt-acc" onclick="setView('acc')">以帳號為維度</button>
+      <button class="vtbtn" id="vt-person" onclick="setView('person')">以人為維度</button>
+    </div>
+    <div id="ov-content"></div>
+  </div>
+  <div id="tab-ledger" class="view">
+    <div class="ledger-wrap">
+      <table><thead><tr>
+        <th>日期</th><th>類型</th><th>平台組合</th><th>參與帳號與結果</th>
+      </tr></thead><tbody id="ledger-body"></tbody></table>
+      <div id="ledger-empty" class="empty" style="display:none">尚無記錄</div>
+    </div>
+  </div>
+  <div id="tab-changelog" class="view">
+    <div class="btn-row" style="margin-bottom:12px">
+      <button class="btn btn-p" onclick="openModal('changeAcc')">＋ 新增帳號異動</button>
+    </div>
+    <div class="change-log">
+      <div class="change-log-row change-log-hdr">
+        <span>日期</span><span>持有人</span><span>平台</span><span>舊帳號</span><span>新帳號</span><span>原因</span>
+      </div>
+      <div id="changelog-body"></div>
+    </div>
+  </div>
+  <div id="tab-settings" class="view"><div id="settings-content"></div></div>
+</div>
+
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-body"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const PASS = '771112';
+const FB_CONFIG = {
+  apiKey: "AIzaSyCL_bfvLqRg8H3rW-V4XinahV1BNg0-NUY",
+  projectId: "account-tracker-ccad9",
+  databaseURL: "https://account-tracker-ccad9-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+const SK = 'acct_v5';
+
+let S = {
+  members:   ["則儒","昀潔","世學","璿皓","婉茹","芮妤"],
+  platforms: ["TS","LU"],
+  accounts:  [],
+  ledger:    [],
+  changelog: []
+};
+let db = null;
+let ovView = 'acc';
+
+// ── 狀態定義 ─────────────────────────────────────────────
+const STATUS_LIST = [
+  "考試+0","考試+1",
+  "出金0（零扣打）","出金0（負扣打）",
+  "出金1（有3+0/洗餘額）","出金2（洗300+1）","出金3（洗300+2）",
+  "出金4（洗300+3）","出金5（洗300+4）",
+  "提款中"
+];
+
+// 勝方升級對照表
+const STATUS_WIN_NEXT = {
+  "考試+0":         "考試+1",
+  "考試+1":         "出金0（零扣打）",
+  "出金0（零扣打）": "出金1（有3+0/洗餘額）",
+  "出金0（負扣打）": "出金1（有3+0/洗餘額）",
+  "出金1（有3+0/洗餘額）":          "出金2（洗300+1）",
+  "出金2（洗300+1）":"出金3（洗300+2）",
+  "出金3（洗300+2）":"出金4（洗300+3）",
+  "出金4（洗300+3）":"出金5（洗300+4）",
+  "出金5（洗300+4）":"提款中",
+  "提款中":          "提款中"
+};
+
+// 敗方結果選項（依狀態）
+function getLoseOptions(status){
+  if(!status) return ["已淘汰"];
+  if(status.startsWith("考試")) return ["已淘汰"];
+  if(status==="出金0（零扣打）") return ["出金0（負扣打）","已淘汰"];
+  // 出金1~5 and 負扣打
+  return [status,"已淘汰"];
+}
+
+const STATUS_ORDER = [
+  "考試+0","考試+1",
+  "出金0（零扣打）","出金0（負扣打）",
+  "出金1（有3+0/洗餘額）","出金2（洗300+1）","出金3（洗300+2）",
+  "出金4（洗300+3）","出金5（洗300+4）",
+  "提款中"
+];
+
+function chipCls(st){
+  const m={
+    "考試+0":"chip-exam0","考試+1":"chip-exam1",
+    "出金0（零扣打）":"chip-ex0z","出金0（負扣打）":"chip-ex0n",
+    "出金1（有3+0/洗餘額）":"chip-ex1","出金2（洗300+1）":"chip-ex2",
+    "出金3（洗300+2）":"chip-ex3","出金4（洗300+3）":"chip-ex4",
+    "出金5（洗300+4）":"chip-ex5","提款中":"chip-withdraw"
+  };
+  return m[st]||"chip-dead";
+}
+
+// ── Firebase ──────────────────────────────────────────────
+function initFB(){
+  try{
+    const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FB_CONFIG);
+    db = firebase.database(app);
+    setSyncUI('syncing');
+    db.ref('tracker').on('value', snap=>{
+      const data = snap.val();
+      if(data){
+        const toArr = v => !v ? [] : Array.isArray(v) ? v.filter(Boolean) : Object.values(v).filter(Boolean);
+        S.members   = Array.isArray(data.members)   ? data.members   : S.members;
+        S.platforms = Array.isArray(data.platforms) ? data.platforms : S.platforms;
+        S.accounts  = toArr(data.accounts);
+        S.ledger    = toArr(data.ledger);
+        S.changelog = toArr(data.changelog);
+        localSave(); render();
+      }
+      setSyncUI('ok');
+    }, ()=>setSyncUI('err'));
+  }catch(e){ setSyncUI('err'); }
+}
+
+async function pushToFB(){
+  if(!db){ setSyncUI('err'); return; }
+  try{
+    const toObj = arr => {
+      if(!arr||!arr.length) return {};
+      const o={};
+      arr.forEach((item,i)=>{ if(item!=null) o[i]=item; });
+      return o;
+    };
+    await db.ref('tracker').set({
+      members:   S.members,
+      platforms: S.platforms,
+      accounts:  toObj(S.accounts),
+      ledger:    toObj(S.ledger),
+      changelog: toObj(S.changelog),
+      updatedAt: new Date().toISOString()
+    });
+    setSyncUI('ok');
+  }catch(e){ setSyncUI('err'); toast('同步失敗：'+e.message); }
+}
+
+function setSyncUI(s){
+  const dot=document.getElementById('sync-dot');
+  const lbl=document.getElementById('sync-label');
+  if(!dot) return;
+  dot.className='sync-dot '+(s==='ok'?'ok':s==='err'?'err':'syncing');
+  lbl.textContent=s==='ok'?'已同步':s==='err'?'連線失敗':'連線中...';
+}
+
+function localSave(){ try{ localStorage.setItem(SK,JSON.stringify(S)); }catch(e){} }
+function localLoad(){
+  try{ const d=localStorage.getItem(SK); if(d){ const p=JSON.parse(d); S={...S,...p}; } }catch(e){}
+}
+function persist(){ localSave(); pushToFB(); }
+
+// ── Toast ─────────────────────────────────────────────────
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+// ── Date helpers ──────────────────────────────────────────
+function fmtDate(d){
+  if(!d) return '';
+  const dt=new Date(d), today=new Date();
+  const diff=Math.floor((today-dt)/(1000*60*60*24));
+  const str=dt.toLocaleDateString('zh-TW',{month:'2-digit',day:'2-digit'});
+  return `<span class="date-tag ${diff<=3?'recent':''}">${str}</span>`;
+}
+function todayStr(){ return new Date().toLocaleDateString('zh-TW'); }
+
+// ── Render ────────────────────────────────────────────────
+function renderStats(){
+  const alive=S.accounts.filter(a=>a.code&&a.status!=="已淘汰");
+  const exam=alive.filter(a=>a.status==="考試+0"||a.status==="考試+1").length;
+  const ex0=alive.filter(a=>a.status&&a.status.startsWith("出金0")).length;
+  const ex15=alive.filter(a=>a.status&&(a.status==="出金1（有3+0/洗餘額）"||a.status.startsWith("出金2")||a.status.startsWith("出金3")||a.status.startsWith("出金4")||a.status.startsWith("出金5")||a.status==="提款中")).length;
+  document.getElementById('stats').innerHTML=[
+    ["存活帳號",alive.length],
+    ["考試帳號",exam],
+    ["出金0",ex0],
+    ["出金中",ex15]
+  ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+}
+
+function setView(v){
+  ovView=v;
+  document.getElementById('vt-acc').classList.toggle('active',v==='acc');
+  document.getElementById('vt-person').classList.toggle('active',v==='person');
+  renderOverview();
+}
+
+function renderOverview(){
+  const container=document.getElementById('ov-content');
+  if(ovView==='acc') renderByAccount(container);
+  else renderByPerson(container);
+}
+
+function renderByAccount(container){
+  let html='';
+  S.platforms.forEach(plat=>{
+    const alive=S.accounts.filter(a=>a.platform===plat&&a.code&&a.status!=="已淘汰");
+    const platColor=plat===S.platforms[0]?'#1A5276':'#145A32';
+    html+=`<div class="plat-block">
+      <div class="plat-hdr" style="background:${platColor}">
+        <span>${plat}</span>
+        <span style="font-size:12px;opacity:.8">${alive.length} 個存活</span>
+        <button onclick="openModal('addAcc','','${plat}')" style="margin-left:auto;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer">＋ 新增</button>
+      </div>`;
+    let any=false;
+    STATUS_ORDER.forEach(status=>{
+      const grp=alive.filter(a=>a.status===status);
+      if(!grp.length) return;
+      any=true;
+      html+=`<div class="status-group">
+        <div class="status-grp-hdr">
+          <span class="chip ${chipCls(status)}" style="cursor:default">${status}</span>
+          <span style="font-size:12px;color:#6b7280">${grp.length} 個</span>
+        </div>
+        <div class="acc-tbl-hdr"><span>持有人</span><span>帳號</span><span>狀態變更日</span><span>餘額 (USD)</span><span></span></div>`;
+      grp.forEach(acc=>{
+        const bal=acc.balance?'$'+Number(acc.balance).toLocaleString('en-US',{minimumFractionDigits:2}):'—';
+        html+=`<div class="acc-row" onclick="openAccModal('${acc.id}')">
+          <span style="font-size:13px;font-weight:500">${acc.owner}</span>
+          <span><code style="background:#f3f4f6;padding:2px 7px;border-radius:4px;font-size:12px">${acc.code}</code></span>
+          <span>${fmtDate(acc.statusChangedAt)}</span>
+          <span style="font-size:13px;${acc.balance?'color:#1B5E20;font-weight:500':'color:#9ca3af'}">${bal}</span>
+          <span style="color:#9ca3af;font-size:12px">›</span>
+        </div>`;
+      });
+      html+=`</div>`;
+    });
+    if(!any) html+=`<div class="empty" style="padding:20px">此平台尚無存活帳號</div>`;
+    html+=`</div>`;
+  });
+  container.innerHTML=html||`<div class="empty">尚無帳號</div>`;
+}
+
+function renderByPerson(container){
+  const alive = S.accounts.filter(a=>a.code&&a.status!=="已淘汰");
+  const statusRows = STATUS_ORDER;
+
+  // Build column headers: each member × each platform
+  const cols = [];
+  S.members.forEach(name=>{
+    S.platforms.forEach(plat=>{
+      cols.push({name,plat});
+    });
+  });
+
+  // Count totals per status
+  const statusTotals = {};
+  statusRows.forEach(st=>{
+    statusTotals[st] = alive.filter(a=>a.status===st).length;
+  });
+
+  let html = `<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+  <table style="border-collapse:collapse;width:100%;font-size:12px;min-width:600px">
+    <thead>
+      <tr>
+        <th style="background:#1F3864;color:#fff;padding:8px 12px;text-align:left;white-space:nowrap;position:sticky;left:0;z-index:2;min-width:120px">帳號 / 進度</th>`;
+
+  // Member headers (spanning platforms)
+  S.members.forEach(name=>{
+    html+=`<th colspan="${S.platforms.length}" style="background:#1F3864;color:#fff;padding:8px 12px;text-align:center;border-left:2px solid #2E75B6">${name}</th>`;
+  });
+  html+=`<th style="background:#F39C12;color:#fff;padding:8px 12px;text-align:center;white-space:nowrap;border-left:2px solid #E67E22">合計</th>
+      </tr>
+      <tr>
+        <th style="background:#2E75B6;color:#fff;padding:6px 12px;position:sticky;left:0;z-index:2"></th>`;
+
+  // Platform sub-headers
+  S.members.forEach(name=>{
+    S.platforms.forEach(plat=>{
+      const platBg = plat===S.platforms[0]?'#1A5276':'#145A32';
+      html+=`<th style="background:${platBg};color:#fff;padding:6px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.2)">${plat}</th>`;
+    });
+    html+=``;
+  });
+  html+=`<th style="background:#E67E22;color:#fff;padding:6px 10px;text-align:center;border-left:2px solid #CA6F1E"></th></tr>
+    </thead>
+    <tbody>`;
+
+  // Status rows
+  statusRows.forEach((status,si)=>{
+    const rowBg = si%2===0 ? '#fff' : '#f9fafb';
+    const chip = `<span class="chip ${chipCls(status)}" style="cursor:default;font-size:10px;white-space:nowrap">${status}</span>`;
+    html+=`<tr>
+      <td style="background:${rowBg};padding:7px 12px;font-weight:500;position:sticky;left:0;z-index:1;border-bottom:1px solid #f0f0f0;border-right:1px solid #e5e7eb">${chip}</td>`;
+
+    S.members.forEach(name=>{
+      S.platforms.forEach(plat=>{
+        const accs = alive.filter(a=>a.owner===name&&a.platform===plat&&a.status===status);
+        const borderLeft = plat===S.platforms[0] ? '2px solid #e5e7eb' : '1px solid #f0f0f0';
+        if(accs.length===0){
+          html+=`<td style="background:${rowBg};padding:7px 10px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft};color:#d1d5db">—</td>`;
+        } else {
+          const accList = accs.map(a=>`<span class="chip ${chipCls(a.status)}" onclick="openAccModal('${a.id}')" style="font-size:10px;margin:1px;cursor:pointer" title="${a.owner} ${a.platform} ${a.code}">${a.code}</span>`).join('');
+          html+=`<td style="background:${rowBg};padding:5px 8px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft}">
+            <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;align-items:center">${accList}</div>
+          </td>`;
+        }
+      });
+    });
+
+    // Row total
+    const total = statusTotals[status]||0;
+    const totalBg = total>0 ? '#00BCD4' : rowBg;
+    const totalColor = total>0 ? '#fff' : '#9ca3af';
+    html+=`<td style="background:${totalBg};color:${totalColor};padding:7px 10px;text-align:center;font-weight:600;border-bottom:1px solid #f0f0f0;border-left:2px solid #e5e7eb">${total>0?total:'—'}</td>`;
+    html+=`</tr>`;
+  });
+
+  // Column totals row
+  html+=`<tr style="background:#FFF9C4">
+    <td style="padding:8px 12px;font-weight:600;position:sticky;left:0;background:#FFF9C4;border-top:2px solid #F39C12;z-index:1">合計</td>`;
+
+  let grandTotal = 0;
+  S.members.forEach(name=>{
+    S.platforms.forEach(plat=>{
+      const cnt = alive.filter(a=>a.owner===name&&a.platform===plat).length;
+      grandTotal += cnt;
+      const borderLeft = plat===S.platforms[0] ? '2px solid #e5e7eb' : '1px solid #f0f0f0';
+      html+=`<td style="padding:8px 10px;text-align:center;font-weight:600;border-top:2px solid #F39C12;border-left:${borderLeft};color:${cnt>0?'#1F3864':'#9ca3af'}">${cnt>0?cnt:'—'}</td>`;
+    });
+  });
+  html+=`<td style="padding:8px 10px;text-align:center;font-weight:700;border-top:2px solid #F39C12;border-left:2px solid #e5e7eb;background:#F39C12;color:#fff">${grandTotal}</td>`;
+  html+=`</tr></tbody></table></div>`;
+
+  container.innerHTML = html;
+}
+
+
+function renderLedger(){
+  const tbody=document.getElementById('ledger-body');
+  const empty=document.getElementById('ledger-empty');
+  if(!S.ledger||!S.ledger.length){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  tbody.innerHTML=[...S.ledger].reverse().map(m=>{
+    const platCombo=`${m.platforms||''}`;
+    const results=(m.results||[]).map(r=>{
+      const cls=r.result==='勝'?'bwin':r.result==='敗（保留）'?'bkeep':'blose';
+      const bal=r.balance?` $${Number(r.balance).toLocaleString('en-US',{minimumFractionDigits:2})}`:'';
+      return `<span class="badge ${cls}">${r.owner}·${r.acc} → ${r.newStatus}${bal}</span>`;
+    }).join(' ');
+    return `<tr>
+      <td style="white-space:nowrap">${m.date||''}</td>
+      <td><span class="badge" style="background:#f3f4f6;color:#374151">${m.type||'對沖'}</span></td>
+      <td style="white-space:nowrap">${platCombo}</td>
+      <td>${results}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderChangelog(){
+  const body=document.getElementById('changelog-body');
+  if(!S.changelog||!S.changelog.length){
+    body.innerHTML='<div class="empty" style="padding:24px">尚無帳號異動記錄</div>'; return;
+  }
+  body.innerHTML=[...S.changelog].reverse().map(c=>`
+    <div class="change-log-row">
+      <span>${c.date||''}</span>
+      <span>${c.owner||''}</span>
+      <span>${c.platform||''}</span>
+      <span><code style="background:#fef3c7;padding:1px 6px;border-radius:4px">${c.oldCode||''}</code></span>
+      <span><code style="background:#dcfce7;padding:1px 6px;border-radius:4px">${c.newCode||''}</code></span>
+      <span style="color:#6b7280">${c.reason||''}</span>
+    </div>`).join('');
+}
+
+function renderSettings(){
+  document.getElementById('settings-content').innerHTML=`
+  <div class="cfg-box">
+    <h3>✅ Firebase Realtime Database 已連線</h3>
+    <p style="font-size:13px;color:#6b7280;line-height:1.6">資料即時同步，所有裝置自動更新。</p>
+  </div>
+  <div class="cfg-box">
+    <h3>成員管理</h3>
+    ${S.members.map(name=>{
+      const total=S.accounts.filter(a=>a.owner===name).length;
+      const alive=S.accounts.filter(a=>a.owner===name&&a.status!=="已淘汰").length;
+      return `<div class="s-row">
+        <div><div class="s-name">${name}</div><div class="s-sub">帳號 ${total} 個 · 存活 ${alive} 個</div></div>
+        <button class="btn btn-sm btn-d" onclick="removeMember('${name}')">刪除</button>
+      </div>`;
+    }).join('')}
+    <div class="input-row">
+      <input type="text" id="new-member" placeholder="輸入新成員名稱" />
+      <button class="btn btn-p btn-sm" onclick="addMember()">新增</button>
+    </div>
+  </div>
+  <div class="cfg-box">
+    <h3>平台管理</h3>
+    ${S.platforms.map(p=>`<div class="s-row">
+      <div class="s-name">${p}</div>
+      <button class="btn btn-sm btn-d" onclick="removePlatform('${p}')">刪除</button>
+    </div>`).join('')}
+    <div class="input-row">
+      <input type="text" id="new-plat" placeholder="輸入新平台名稱" />
+      <button class="btn btn-p btn-sm" onclick="addPlatform()">新增</button>
+    </div>
+  </div>`;
+}
+
+function render(){
+  renderStats(); renderOverview(); renderLedger(); renderChangelog();
+}
+
+function switchTab(el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+el.dataset.tab).classList.add('active');
+  if(el.dataset.tab==='settings') renderSettings();
+}
+
+// ── Modals ────────────────────────────────────────────────
+function openModal(type, arg1='', arg2=''){
+  const body=document.getElementById('modal-body');
+
+  if(type==='addAcc'){
+    const ownerOpts=S.members.map(n=>`<option value="${n}" ${n===arg1?'selected':''}>${n}</option>`).join('');
+    const platOpts=S.platforms.map(p=>`<option value="${p}" ${p===arg2?'selected':''}>${p}</option>`).join('');
+    body.innerHTML=`<h2>新增帳號</h2>
+      <div class="two-col">
+        <div class="form-row"><label>持有人</label><select id="a-owner">${ownerOpts}</select></div>
+        <div class="form-row"><label>平台</label><select id="a-plat">${platOpts}</select></div>
+      </div>
+      <div class="form-row"><label>帳號後三碼</label><input type="text" id="a-code" placeholder="例如 001" maxlength="5" /></div>
+      <div class="two-col">
+        <div class="form-row"><label>初始狀態</label><select id="a-status">${STATUS_LIST.map(s=>`<option>${s}</option>`).join('')}</select></div>
+        <div class="form-row"><label>目前餘額 (USD)</label><input type="text" id="a-balance" placeholder="0.00" /></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" onclick="closeModal()">取消</button>
+        <button class="btn btn-p" onclick="addAccount()">新增</button>
+      </div>`;
+
+  } else if(type==='match'){
+    // 動態產生 2~4 個帳號選擇
+    buildMatchModal(body);
+
+  } else if(type==='changeAcc'){
+    const ownerOpts=S.members.map(n=>`<option>${n}</option>`).join('');
+    const platOpts=S.platforms.map(p=>`<option>${p}</option>`).join('');
+    body.innerHTML=`<h2>帳號異動紀錄</h2>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:14px">用於記錄考試帳號升級後帳號號碼更換的異動</p>
+      <div class="two-col">
+        <div class="form-row"><label>持有人</label><select id="ch-owner" onchange="updateChAccOpts()">${ownerOpts}</select></div>
+        <div class="form-row"><label>平台</label><select id="ch-plat" onchange="updateChAccOpts()">${platOpts}</select></div>
+      </div>
+      <div class="two-col">
+        <div class="form-row"><label>舊帳號後三碼</label><select id="ch-old-acc"></select></div>
+        <div class="form-row"><label>新帳號後三碼</label><input type="text" id="ch-new-code" placeholder="新的後三碼" maxlength="5" /></div>
+      </div>
+      <div class="form-row"><label>異動原因</label>
+        <select id="ch-reason">
+          <option>考試+1升出金0，帳號更換</option>
+          <option>其他</option>
+        </select>
+      </div>
+      <div class="form-row"><label>日期</label><input type="text" id="ch-date" value="${todayStr()}" /></div>
+      <div class="form-actions">
+        <button class="btn" onclick="closeModal()">取消</button>
+        <button class="btn btn-p" onclick="saveChangeAcc()">確認異動</button>
+      </div>`;
+    setTimeout(()=>updateChAccOpts(),0);
+  }
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function buildMatchModal(body){
+  const platOpts=S.platforms.map(p=>`<option>${p}</option>`).join('');
+  body.innerHTML=`<h2>記錄對沖結果</h2>
+    <div class="two-col">
+      <div class="form-row"><label>日期</label><input type="text" id="m-date" value="${todayStr()}" /></div>
+      <div class="form-row"><label>參與帳號數量</label>
+        <select id="m-count" onchange="buildAccRows()">
+          <option value="2">2 個帳號（1 vs 1）</option>
+          <option value="3">3 個帳號</option>
+          <option value="4">4 個帳號</option>
+        </select>
+      </div>
+    </div>
+    <div id="acc-rows-container"></div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" onclick="recordMatch()">確認記錄</button>
+    </div>`;
+  setTimeout(()=>buildAccRows(),0);
+}
+
+function buildAccRows(){
+  const count=parseInt(document.getElementById('m-count').value)||2;
+  const container=document.getElementById('acc-rows-container');
+  const aliveAccs=S.accounts.filter(a=>a.code&&a.status!=="已淘汰");
+  const nameOpts=S.members.map(n=>`<option>${n}</option>`).join('');
+  const platOpts=S.platforms.map(p=>`<option>${p}</option>`).join('');
+
+  let html='<div style="margin-bottom:8px;font-size:12px;color:#6b7280">填入每個帳號的對沖結果</div>';
+  for(let i=0;i<count;i++){
+    const statusOpts=STATUS_LIST.map(s=>`<option>${s}</option>`).join('');
+    const resultOpts=`<option>勝</option><option>敗（淘汰）</option><option>敗（保留）</option>`;
+    html+=`<div class="acc-result-row" id="acc-row-${i}">
+      <div>
+        <label>持有人</label>
+        <select id="r-owner-${i}" onchange="updateRowAcc(${i})">${nameOpts}</select>
+      </div>
+      <div>
+        <label>平台</label>
+        <select id="r-plat-${i}" onchange="updateRowAcc(${i})">${platOpts}</select>
+      </div>
+      <div>
+        <label>帳號</label>
+        <select id="r-acc-${i}"></select>
+      </div>
+      <div>
+        <label>結果</label>
+        <select id="r-result-${i}" onchange="updateRowNewStatus(${i})">${resultOpts}</select>
+      </div>
+      <div style="grid-column:span 2">
+        <label>新狀態</label>
+        <select id="r-newstatus-${i}">${statusOpts}</select>
+      </div>
+      <div style="grid-column:span 2">
+        <label>餘額 (USD)</label>
+        <input type="text" id="r-bal-${i}" placeholder="0.00" />
+      </div>
+    </div>`;
+  }
+  container.innerHTML=html;
+  for(let i=0;i<count;i++) updateRowAcc(i);
+}
+
+function updateRowAcc(i){
+  const owner=document.getElementById(`r-owner-${i}`).value;
+  const plat=document.getElementById(`r-plat-${i}`).value;
+  const accs=S.accounts.filter(a=>a.owner===owner&&a.platform===plat&&a.status!=="已淘汰"&&a.code);
+  const sel=document.getElementById(`r-acc-${i}`);
+  sel.innerHTML=accs.map(a=>`<option value="${a.id}">${a.code} (${a.status})</option>`).join('')||`<option value="">— 無 —</option>`;
+  updateRowNewStatus(i);
+}
+
+function updateRowNewStatus(i){
+  const result=document.getElementById(`r-result-${i}`).value;
+  const accId=document.getElementById(`r-acc-${i}`).value;
+  const acc=S.accounts.find(a=>a.id===accId);
+  if(!acc) return;
+  const newStatusSel=document.getElementById(`r-newstatus-${i}`);
+  let suggested='';
+  if(result==='勝') suggested=STATUS_WIN_NEXT[acc.status]||acc.status;
+  else if(result==='敗（淘汰）') suggested='已淘汰';
+  else {
+    // 敗保留
+    const opts=getLoseOptions(acc.status);
+    suggested=opts[0];
+  }
+  // rebuild options and set suggestion
+  const allOpts=[...STATUS_LIST,'已淘汰'];
+  newStatusSel.innerHTML=allOpts.map(s=>`<option value="${s}" ${s===suggested?'selected':''}>${s}</option>`).join('');
+}
+
+function recordMatch(){
+  const date=document.getElementById('m-date').value;
+  const count=parseInt(document.getElementById('m-count').value)||2;
+  const results=[];
+  const platSet=new Set();
+  for(let i=0;i<count;i++){
+    const accId=document.getElementById(`r-acc-${i}`).value;
+    const result=document.getElementById(`r-result-${i}`).value;
+    const newStatus=document.getElementById(`r-newstatus-${i}`).value;
+    const bal=document.getElementById(`r-bal-${i}`).value.trim();
+    const owner=document.getElementById(`r-owner-${i}`).value;
+    const plat=document.getElementById(`r-plat-${i}`).value;
+    platSet.add(plat);
+    if(!accId){ alert('請選擇所有帳號'); return; }
+    const acc=S.accounts.find(a=>a.id===accId);
+    if(!acc) continue;
+    // Update account
+    const oldStatus=acc.status;
+    acc.status=newStatus;
+    acc.statusChangedAt=new Date().toISOString();
+    if(bal) acc.balance=bal;
+    if(newStatus==='已淘汰') acc.balance='';
+    results.push({owner, plat, acc:acc.code, oldStatus, newStatus, result, balance:bal});
+  }
+  if(!S.ledger) S.ledger=[];
+  S.ledger.push({
+    id:Date.now()+'', date,
+    type:'對沖',
+    platforms:[...platSet].join(' vs '),
+    results
+  });
+  persist(); closeModal(); render();
+  toast('對沖結果已記錄 ✓');
+}
+
+function openAccModal(id){
+  const acc=S.accounts.find(a=>a.id===id); if(!acc) return;
+  const opts=[...STATUS_LIST,'已淘汰'].map(s=>`<option value="${s}" ${s===acc.status?'selected':''}>${s}</option>`).join('');
+  const changedStr=acc.statusChangedAt?new Date(acc.statusChangedAt).toLocaleDateString('zh-TW'):'—';
+  document.getElementById('modal-body').innerHTML=`<h2>${acc.owner} · ${acc.platform} · <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px">${acc.code}</code></h2>
+    <div class="two-col">
+      <div class="form-row"><label>目前狀態</label><select id="d-status">${opts}</select></div>
+      <div class="form-row"><label>餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" /></div>
+    </div>
+    <p style="font-size:12px;color:#9ca3af;margin-top:4px">開戶：${acc.createdAt||'—'} ｜ 狀態變更：${changedStr}</p>
+    <div class="form-actions">
+      <button class="btn btn-d" onclick="deleteAcc('${id}')">刪除帳號</button>
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" onclick="saveAcc('${id}')">儲存</button>
+    </div>`;
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); }
+
+// ── Account operations ────────────────────────────────────
+function addAccount(){
+  const owner=document.getElementById('a-owner').value;
+  const plat=document.getElementById('a-plat').value;
+  const code=document.getElementById('a-code').value.trim();
+  const status=document.getElementById('a-status').value;
+  const balance=document.getElementById('a-balance').value.trim();
+  if(!code){ alert('請填帳號後三碼'); return; }
+  if(!S.accounts) S.accounts=[];
+  S.accounts.push({id:Date.now()+'',owner,platform:plat,code,status,balance,
+    createdAt:todayStr(), statusChangedAt:new Date().toISOString()});
+  persist(); closeModal(); render();
+}
+
+function saveAcc(id){
+  const acc=S.accounts.find(a=>a.id===id);
+  if(acc){
+    const newStatus=document.getElementById('d-status').value;
+    if(newStatus!==acc.status) acc.statusChangedAt=new Date().toISOString();
+    acc.status=newStatus;
+    acc.balance=document.getElementById('d-balance').value.trim();
+    if(newStatus==='已淘汰') acc.balance='';
+  }
+  persist(); closeModal(); render();
+}
+
+function deleteAcc(id){
+  if(!confirm('確定刪除？')) return;
+  S.accounts=S.accounts.filter(a=>a.id!==id);
+  persist(); closeModal(); render();
+}
+
+// ── Account change log ────────────────────────────────────
+function updateChAccOpts(){
+  const owner=document.getElementById('ch-owner').value;
+  const plat=document.getElementById('ch-plat').value;
+  const accs=S.accounts.filter(a=>a.owner===owner&&a.platform===plat&&a.code&&a.status!=="已淘汰");
+  const sel=document.getElementById('ch-old-acc');
+  if(sel) sel.innerHTML=accs.map(a=>`<option value="${a.id}">${a.code} (${a.status})</option>`).join('')||`<option value="">— 無存活帳號 —</option>`;
+}
+
+function saveChangeAcc(){
+  const owner=document.getElementById('ch-owner').value;
+  const plat=document.getElementById('ch-plat').value;
+  const oldAccId=document.getElementById('ch-old-acc').value;
+  const newCode=document.getElementById('ch-new-code').value.trim();
+  const reason=document.getElementById('ch-reason').value;
+  const date=document.getElementById('ch-date').value;
+  if(!oldAccId||!newCode){ alert('請填寫完整資料'); return; }
+  const acc=S.accounts.find(a=>a.id===oldAccId);
+  if(!acc){ alert('找不到帳號'); return; }
+  const oldCode=acc.code;
+  if(!S.changelog) S.changelog=[];
+  S.changelog.push({id:Date.now()+'',date,owner,platform:plat,oldCode,newCode,reason});
+  // Update account code
+  acc.code=newCode;
+  acc.statusChangedAt=new Date().toISOString();
+  persist(); closeModal(); render();
+  toast(`帳號異動：${oldCode} → ${newCode} ✓`);
+}
+
+// ── Settings operations ───────────────────────────────────
+function addMember(){
+  const v=document.getElementById('new-member').value.trim();
+  if(!v||S.members.includes(v)){ alert(v?'已存在':'請輸入名稱'); return; }
+  S.members.push(v); persist(); renderSettings();
+  document.getElementById('new-member').value='';
+}
+function removeMember(name){
+  if(!confirm(`確定移除「${name}」？`)) return;
+  S.members=S.members.filter(m=>m!==name);
+  S.accounts=S.accounts.filter(a=>a.owner!==name);
+  persist(); render(); renderSettings();
+}
+function addPlatform(){
+  const v=document.getElementById('new-plat').value.trim();
+  if(!v||S.platforms.includes(v)){ alert(v?'已存在':'請輸入名稱'); return; }
+  S.platforms.push(v); persist(); renderSettings();
+  document.getElementById('new-plat').value='';
+}
+function removePlatform(p){
+  if(!confirm(`確定移除「${p}」平台？`)) return;
+  S.platforms=S.platforms.filter(x=>x!==p);
+  S.accounts=S.accounts.filter(a=>a.platform!==p);
+  persist(); render(); renderSettings();
+}
+
+// ── Password ──────────────────────────────────────────────
+function checkPw(){
+  const val=document.getElementById('lock-input').value;
+  if(val===PASS){
+    sessionStorage.setItem('auth','1');
+    document.getElementById('lock').style.display='none';
+    document.getElementById('lock-input').value='';
+  } else {
+    const err=document.getElementById('lock-err');
+    err.textContent='密碼錯誤';
+    document.getElementById('lock-input').value='';
+    document.getElementById('lock-input').focus();
+    setTimeout(()=>err.textContent='',2000);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────
+localLoad(); render();
+if(sessionStorage.getItem('auth')==='1') document.getElementById('lock').style.display='none';
+function waitFB(n){
+  if(n>30){ setSyncUI('err'); return; }
+  if(typeof firebase!=='undefined'&&firebase.database){ initFB(); }
+  else setTimeout(()=>waitFB(n+1),300);
+}
+waitFB(0);
+</script>
+</body>
+</html>
