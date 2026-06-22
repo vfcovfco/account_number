@@ -17,7 +17,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .sync-label{font-size:11px;color:rgba(255,255,255,.7)}
 .container{max-width:1000px;margin:0 auto;padding:16px}
-.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;grid-auto-flow:dense}
 .stat{background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .stat-label{font-size:11px;color:#6b7280;margin-bottom:4px}
 .stat-val{font-size:24px;font-weight:600;color:#1F3864}
@@ -47,6 +47,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .chip-ex4{background:#66BB6A;color:#fff;border-color:#43A047}
 .chip-ex5{background:#43A047;color:#fff;border-color:#2E7D32}
 .chip-withdraw{background:#E3F2FD;color:#0D47A1;border-color:#90CAF9}
+.chip-yoxi{background:#F3E5F5;color:#6A1B9A;border-color:#CE93D8}
 .chip-dead{background:#f3f4f6;color:#9ca3af;text-decoration:line-through;opacity:.6}
 .ledger-wrap{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -213,7 +214,7 @@ const STATUS_LIST = [
   "出金0（零扣打）","出金0（負扣打）",
   "出金1（有300+1）","出金2（有300+2）","出金3（有300+3）",
   "出金4（有300+4）","出金5（有300+5）",
-  "提款中"
+  "提款中","有洗"
 ];
 
 // 勝方升級對照表
@@ -227,7 +228,8 @@ const STATUS_WIN_NEXT = {
   "出金3（有300+3）":"出金4（有300+4）",
   "出金4（有300+4）":"出金5（有300+5）",
   "出金5（有300+5）":"提款中",
-  "提款中":          "提款中"
+  "提款中":          "有洗",
+  "有洗":            "有洗"
 };
 
 // 敗方結果選項（依狀態）
@@ -244,7 +246,7 @@ const STATUS_ORDER = [
   "出金0（零扣打）","出金0（負扣打）",
   "出金1（有300+1）","出金2（有300+2）","出金3（有300+3）",
   "出金4（有300+4）","出金5（有300+5）",
-  "提款中"
+  "提款中","有洗"
 ];
 
 // 舊狀態名稱對照新名稱
@@ -259,6 +261,7 @@ const STATUS_MIGRATE = {
   "出金4": "出金4（有300+4）",
   "出金5": "出金5（有300+5）",
   "提領中": "提款中",
+  "有洗": "有洗",
   // 第二版本
   "出金0（零扣打）": "出金0（零扣打）",
   "出金0（負扣打）": "出金0（負扣打）",
@@ -370,13 +373,17 @@ function renderStats(){
   const alive=S.accounts.filter(a=>a.code&&a.status!=="已淘汰");
   const exam=alive.filter(a=>a.status==="考試+0"||a.status==="考試+1").length;
   const ex0=alive.filter(a=>a.status&&a.status.startsWith("出金0")).length;
-  const ex15=alive.filter(a=>a.status&&(a.status==="出金1（有300+1）"||a.status.startsWith("出金2")||a.status.startsWith("出金3")||a.status.startsWith("出金4")||a.status.startsWith("出金5")||a.status==="提款中")).length;
+  const ex15=alive.filter(a=>a.status&&(a.status==="出金1（有300+1）"||a.status.startsWith("出金2")||a.status.startsWith("出金3")||a.status.startsWith("出金4")||a.status.startsWith("出金5"))).length;
+  const withdrawing=alive.filter(a=>a.status==="提款中");
+  const withdrawTotal=withdrawing.reduce((sum,a)=>sum+(parseFloat(a.withdrawAmount)||0),0);
+  const withdrawStr=withdrawTotal>0?'$'+withdrawTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   document.getElementById('stats').innerHTML=[
     ["存活帳號",alive.length],
     ["考試帳號",exam],
     ["出金0",ex0],
-    ["出金中",ex15]
-  ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+    ["出金中",ex15],
+  ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('')
+  +`<div class="stat" style="grid-column:span 2 / auto"><div class="stat-label">提款中金額 (USD)</div><div class="stat-val" style="font-size:18px">${withdrawStr}</div><div style="font-size:11px;color:#6b7280;margin-top:2px">${withdrawing.length} 個帳號提款中</div></div>`;
 }
 
 function setView(v){
@@ -795,10 +802,22 @@ function openAccModal(id){
   const acc=S.accounts.find(a=>a.id===id); if(!acc) return;
   const opts=[...STATUS_LIST,'已淘汰'].map(s=>`<option value="${s}" ${s===acc.status?'selected':''}>${s}</option>`).join('');
   const changedStr=acc.statusChangedAt?new Date(acc.statusChangedAt).toLocaleDateString('zh-TW'):'—';
+  const isWithdrawing = acc.status==='提款中';
+  const isYoxi = acc.status==='有洗';
   document.getElementById('modal-body').innerHTML=`<h2>${acc.owner} · ${acc.platform} · <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px">${acc.code}</code></h2>
     <div class="two-col">
-      <div class="form-row"><label>目前狀態</label><select id="d-status">${opts}</select></div>
+      <div class="form-row"><label>目前狀態</label><select id="d-status" onchange="toggleWithdrawField()">${opts}</select></div>
       <div class="form-row"><label>餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" /></div>
+    </div>
+    <div id="withdraw-field" style="display:${isWithdrawing||isYoxi?'block':'none'}">
+      <div class="two-col">
+        <div class="form-row"><label style="color:#6A1B9A;font-weight:500">提款金額 (USD)</label><input type="text" id="d-withdraw-amount" value="${acc.withdrawAmount||''}" placeholder="0.00" style="border-color:#CE93D8" /></div>
+        <div class="form-row"><label style="color:#6b7280">剩餘金額 (USD)</label>
+          <div style="padding:8px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;color:#1B5E20;font-weight:500">
+            ${acc.withdrawAmount&&acc.balance?'$'+Math.max(0,parseFloat(acc.balance||0)-parseFloat(acc.withdrawAmount||0)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'填入提款金額後自動計算'}
+          </div>
+        </div>
+      </div>
     </div>
     <p style="font-size:12px;color:#9ca3af;margin-top:4px">開戶：${acc.createdAt||'—'} ｜ 狀態變更：${changedStr}</p>
     <div class="form-actions">
@@ -825,6 +844,12 @@ function addAccount(){
   persist(); closeModal(); render();
 }
 
+function toggleWithdrawField(){
+  const st=document.getElementById('d-status').value;
+  const f=document.getElementById('withdraw-field');
+  if(f) f.style.display=(st==='提款中'||st==='有洗')?'block':'none';
+}
+
 function saveAcc(id){
   const acc=S.accounts.find(a=>a.id===id);
   if(acc){
@@ -833,6 +858,14 @@ function saveAcc(id){
     acc.status=newStatus;
     acc.balance=document.getElementById('d-balance').value.trim();
     if(newStatus==='已淘汰') acc.balance='';
+    // 提款金額
+    const wdField=document.getElementById('d-withdraw-amount');
+    if(wdField) acc.withdrawAmount=wdField.value.trim();
+    // 變成有洗時，餘額自動變成剩餘金額
+    if(newStatus==='有洗'&&acc.balance&&acc.withdrawAmount){
+      const remaining=Math.max(0,parseFloat(acc.balance||0)-parseFloat(acc.withdrawAmount||0));
+      acc.balance=remaining.toFixed(2);
+    }
   }
   persist(); closeModal(); render();
 }
