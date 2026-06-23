@@ -480,6 +480,8 @@ function renderByAccount(container){
       </div>`;
     let any=false;
     STATUS_ORDER.forEach(status=>{
+      // 提款中已在上方紫色區塊顯示，這裡跳過
+      if(status==='提款中') return;
       const grp=alive.filter(a=>a.status===status);
       if(!grp.length) return;
       any=true;
