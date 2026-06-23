@@ -387,6 +387,25 @@ function fmtDate(d){
 function todayStr(){ return new Date().toLocaleDateString('zh-TW'); }
 
 // ── Render ────────────────────────────────────────────────
+
+// ── 流水帳記錄 helper ─────────────────────────────────────
+function addLedgerEntry(type, owner, platform, code, detail, oldVal, newVal){
+  if(!S.ledger) S.ledger=[];
+  S.ledger.push({
+    id: Date.now()+'',
+    date: todayStr(),
+    type,
+    platforms: platform,
+    results:[{
+      owner, plat:platform, acc:code,
+      result: type,
+      newStatus: detail,
+      balance: newVal,
+      oldBalance: oldVal
+    }]
+  });
+}
+
 function renderStats(){
   const alive=S.accounts.filter(a=>a.code&&a.status!=="已淘汰");
   const exam=alive.filter(a=>a.status==="考試+0"||a.status==="考試+1").length;
@@ -595,17 +614,26 @@ function renderLedger(){
   if(!S.ledger||!S.ledger.length){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
   tbody.innerHTML=[...S.ledger].reverse().map(m=>{
+    const isBalance = ['餘額調整','申請提款','有洗餘額','提款到帳','帳號異動'].includes(m.type);
     const platCombo=`${m.platforms||''}`;
-    const results=(m.results||[]).map(r=>{
-      const cls=r.result==='勝'?'bwin':r.result==='敗（保留）'?'bkeep':'blose';
-      const bal=r.balance?` $${Number(r.balance).toLocaleString('en-US',{minimumFractionDigits:2})}`:'';
-      return `<span class="badge ${cls}">${r.owner}·${r.acc} → ${r.newStatus}${bal}</span>`;
-    }).join(' ');
+    let resultHtml='';
+    if(isBalance){
+      const r=(m.results||[])[0]||{};
+      const typeCls={'餘額調整':'bkeep','申請提款':'blose','有洗餘額':'bwin','提款到帳':'bwin','帳號異動':'bkeep'}[m.type]||'bkeep';
+      const arrow=r.oldBalance&&r.balance?` ${r.oldBalance} → $${Number(r.balance).toLocaleString('en-US',{minimumFractionDigits:2})}`:'';
+      resultHtml=`<span class="badge ${typeCls}">${r.owner||''}·${r.acc||''}</span> ${r.newStatus||''}${arrow}`;
+    } else {
+      resultHtml=(m.results||[]).map(r=>{
+        const cls=r.result==='勝'?'bwin':r.result==='敗（保留）'?'bkeep':'blose';
+        const bal=r.balance?` $${Number(r.balance).toLocaleString('en-US',{minimumFractionDigits:2})}`:'';
+        return `<span class="badge ${cls}">${r.owner}·${r.acc} → ${r.newStatus}${bal}</span>`;
+      }).join(' ');
+    }
     return `<tr>
       <td style="white-space:nowrap">${m.date||''}</td>
       <td><span class="badge" style="background:#f3f4f6;color:#374151">${m.type||'對沖'}</span></td>
       <td style="white-space:nowrap">${platCombo}</td>
-      <td>${results}</td>
+      <td>${resultHtml}</td>
     </tr>`;
   }).join('');
 }
@@ -1001,14 +1029,31 @@ function saveAcc(id){
   const acc=S.accounts.find(a=>a.id===id);
   if(acc){
     const newStatus=document.getElementById('d-status').value;
+    const oldStatus=acc.status;
+    const oldBalance=acc.balance;
+    const oldWd=acc.withdrawAmount;
+    const oldYoxi=acc.yoxiBalance;
     if(newStatus!==acc.status) acc.statusChangedAt=new Date().toISOString();
     acc.status=newStatus;
-    acc.balance=document.getElementById('d-balance').value.trim();
+    const newBalance=document.getElementById('d-balance').value.trim();
+    acc.balance=newBalance;
     if(newStatus==='已淘汰'){ acc.balance=''; acc.withdrawAmount=''; acc.yoxiBalance=''; }
     const wdField=document.getElementById('d-withdraw-amount');
-    if(wdField) acc.withdrawAmount=wdField.value.trim();
+    const newWd=wdField?wdField.value.trim():'';
+    if(wdField) acc.withdrawAmount=newWd;
     const yoxiField=document.getElementById('d-yoxi-balance');
-    if(yoxiField) acc.yoxiBalance=yoxiField.value.trim();
+    const newYoxi=yoxiField?yoxiField.value.trim():'';
+    if(yoxiField) acc.yoxiBalance=newYoxi;
+    // 記錄餘額異動到流水帳
+    if(newBalance!==oldBalance && newBalance)
+      addLedgerEntry('餘額調整', acc.owner, acc.platform, acc.code,
+        `${oldStatus}→${newStatus}`, oldBalance, newBalance);
+    if(newWd!==oldWd && newWd)
+      addLedgerEntry('申請提款', acc.owner, acc.platform, acc.code,
+        `提款中金額`, oldWd||'0', newWd);
+    if(newYoxi!==oldYoxi && newYoxi)
+      addLedgerEntry('有洗餘額', acc.owner, acc.platform, acc.code,
+        `有洗餘額`, oldYoxi||'0', newYoxi);
   }
   persist(); closeModal(); render();
   toast('已儲存 ✓');
@@ -1045,6 +1090,9 @@ function saveChangeAcc(){
   // Update account code
   acc.code=newCode;
   acc.statusChangedAt=new Date().toISOString();
+  // 記錄到流水帳
+  addLedgerEntry('帳號異動', owner, plat, `${oldCode}→${newCode}`,
+    reason, oldCode, newCode);
   persist(); closeModal(); render();
   toast(`帳號異動：${oldCode} → ${newCode} ✓`);
 }
