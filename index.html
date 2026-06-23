@@ -859,19 +859,28 @@ function openAccModal(id){
   const changedStr=acc.statusChangedAt?new Date(acc.statusChangedAt).toLocaleDateString('zh-TW'):'—';
   const isWithdrawing = acc.status==='提款中';
   const isYoxi = acc.status==='有洗';
+  const currentRemain = (acc.withdrawAmount&&acc.balance)
+    ? Math.max(0,parseFloat(acc.balance||0)-parseFloat(acc.withdrawAmount||0)).toFixed(2)
+    : '';
   document.getElementById('modal-body').innerHTML=`<h2>${acc.owner} · ${acc.platform} · <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px">${acc.code}</code></h2>
     <div class="two-col">
       <div class="form-row"><label>目前狀態</label><select id="d-status" onchange="toggleWithdrawField()">${opts}</select></div>
-      <div class="form-row"><label>餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" /></div>
+      <div class="form-row"><label>餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" oninput="calcRemain()" /></div>
     </div>
     <div id="withdraw-field" style="display:${isWithdrawing||isYoxi?'block':'none'}">
-      <div class="two-col">
-        <div class="form-row"><label style="color:#6A1B9A;font-weight:500">提款金額 (USD)</label><input type="text" id="d-withdraw-amount" value="${acc.withdrawAmount||''}" placeholder="0.00" style="border-color:#CE93D8" /></div>
-        <div class="form-row"><label style="color:#6b7280">剩餘金額 (USD)</label>
-          <div style="padding:8px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;color:#1B5E20;font-weight:500">
-            ${acc.withdrawAmount&&acc.balance?'$'+Math.max(0,parseFloat(acc.balance||0)-parseFloat(acc.withdrawAmount||0)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'填入提款金額後自動計算'}
+      <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;color:#6A1B9A;margin-bottom:8px">💰 提款資訊</div>
+        <div class="two-col">
+          <div class="form-row">
+            <label style="color:#6A1B9A;font-weight:500">提款金額 (USD)</label>
+            <input type="text" id="d-withdraw-amount" value="${acc.withdrawAmount||''}" placeholder="0.00" style="border-color:#CE93D8" oninput="calcRemain()" />
+          </div>
+          <div class="form-row">
+            <label style="color:#166534;font-weight:500">剩餘金額 → 有洗餘額 (USD)</label>
+            <input type="text" id="d-remain" value="${currentRemain}" placeholder="自動計算" style="border-color:#86efac;background:#f0fdf4" readonly />
           </div>
         </div>
+        <div style="font-size:11px;color:#6A1B9A;margin-top:4px">✦ 狀態改為「有洗」儲存後，餘額自動更新為剩餘金額</div>
       </div>
     </div>
     <p style="font-size:12px;color:#9ca3af;margin-top:4px">開戶：${acc.createdAt||'—'} ｜ 狀態變更：${changedStr}</p>
@@ -880,29 +889,9 @@ function openAccModal(id){
       <button class="btn" onclick="closeModal()">取消</button>
       <button class="btn btn-p" onclick="saveAcc('${id}')">儲存</button>
     </div>`;
-  else if(type==='completeWithdraw'){
-    const withdrawingAccs = S.accounts.filter(a=>a.status==='提款中'&&a.code);
-    if(!withdrawingAccs.length){
-      alert('目前沒有「提款中」的帳號'); return;
-    }
-    const accOpts = withdrawingAccs.map(a=>`<option value="${a.id}">${a.owner} · ${a.platform} · ${a.code} (提款金額: ${a.withdrawAmount?'$'+a.withdrawAmount:'未填'})</option>`).join('');
-    body.innerHTML=`<h2>完成提款</h2>
-      <div class="form-row"><label>帳號</label><select id="wd-acc" onchange="updateWdInfo()">${accOpts}</select></div>
-      <div id="wd-info" style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#374151;line-height:1.8"></div>
-      <div class="two-col">
-        <div class="form-row"><label>實際提款金額 (USD)</label><input type="text" id="wd-amount" placeholder="0.00" style="border-color:#CE93D8" /></div>
-        <div class="form-row"><label>剩餘金額 (USD)</label><input type="text" id="wd-remain" placeholder="0.00" /></div>
-      </div>
-      <div class="form-row"><label>日期</label><input type="text" id="wd-date" value="${todayStr()}" /></div>
-      <div class="form-row"><label>備註</label><input type="text" id="wd-note" placeholder="選填" /></div>
-      <div class="form-actions">
-        <button class="btn" onclick="closeModal()">取消</button>
-        <button class="btn btn-p" onclick="saveWithdrawal()">確認完成提款</button>
-      </div>`;
-    setTimeout(()=>updateWdInfo(),0);
-  }
   document.getElementById('modal-bg').classList.add('open');
 }
+
 
 function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); }
 
