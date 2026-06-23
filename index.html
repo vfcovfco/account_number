@@ -48,6 +48,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .chip-ex5{background:#43A047;color:#fff;border-color:#2E7D32}
 .chip-withdraw{background:#E3F2FD;color:#0D47A1;border-color:#90CAF9}
 .chip-yoxi{background:#F3E5F5;color:#6A1B9A;border-color:#CE93D8}
+.chip-done{background:#E8EAF6;color:#283593;border-color:#9FA8DA}
 .chip-dead{background:#f3f4f6;color:#9ca3af;text-decoration:line-through;opacity:.6}
 .ledger-wrap{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -227,7 +228,7 @@ const STATUS_LIST = [
   "出金0（零扣打）","出金0（負扣打）",
   "出金1（有300+1）","出金2（有300+2）","出金3（有300+3）",
   "出金4（有300+4）","出金5（有300+5）",
-  "提款中","有洗"
+  "提款中","有洗","已完成提款"
 ];
 
 // 勝方升級對照表
@@ -242,7 +243,8 @@ const STATUS_WIN_NEXT = {
   "出金4（有300+4）":"出金5（有300+5）",
   "出金5（有300+5）":"提款中",
   "提款中":          "有洗",
-  "有洗":            "有洗"
+  "有洗":            "已完成提款",
+  "已完成提款":      "已完成提款"
 };
 
 // 敗方結果選項（依狀態）
@@ -259,7 +261,7 @@ const STATUS_ORDER = [
   "出金0（零扣打）","出金0（負扣打）",
   "出金1（有300+1）","出金2（有300+2）","出金3（有300+3）",
   "出金4（有300+4）","出金5（有300+5）",
-  "提款中","有洗"
+  "提款中","有洗","已完成提款"
 ];
 
 // 舊狀態名稱對照新名稱
@@ -275,6 +277,7 @@ const STATUS_MIGRATE = {
   "出金5": "出金5（有300+5）",
   "提領中": "提款中",
   "有洗": "有洗",
+  "已完成提款": "已完成提款",
   // 第二版本
   "出金0（零扣打）": "出金0（零扣打）",
   "出金0（負扣打）": "出金0（負扣打）",
@@ -302,7 +305,7 @@ function chipCls(st){
     "出金0（零扣打）":"chip-ex0z","出金0（負扣打）":"chip-ex0n",
     "出金1（有300+1）":"chip-ex1","出金2（有300+2）":"chip-ex2",
     "出金3（有300+3）":"chip-ex3","出金4（有300+4）":"chip-ex4",
-    "出金5（有300+5）":"chip-ex5","提款中":"chip-withdraw","有洗":"chip-yoxi"
+    "出金5（有300+5）":"chip-ex5","提款中":"chip-withdraw","有洗":"chip-yoxi","已完成提款":"chip-done"
   };
   return m[st]||"chip-dead";
 }
@@ -393,10 +396,10 @@ function renderStats(){
   const withdrawTotal=alive.reduce((sum,a)=>sum+(parseFloat(a.withdrawAmount)||0),0);
   const withdrawStr=withdrawTotal>0?'$'+withdrawTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   const withdrawCount=alive.filter(a=>parseFloat(a.withdrawAmount)>0).length;
-  // 有洗：所有帳號的 yoxiBalance 加總
-  const yoxiTotal=alive.reduce((sum,a)=>sum+(parseFloat(a.yoxiBalance)||0),0);
-  const yoxiStr=yoxiTotal>0?'$'+yoxiTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
-  const yoxiCount=alive.filter(a=>parseFloat(a.yoxiBalance)>0).length;
+  // 已完成提款：所有提款紀錄加總
+  const doneTotal=(S.withdrawals||[]).reduce((sum,w)=>sum+(parseFloat(w.withdrawAmount)||0),0);
+  const doneStr=doneTotal>0?'$'+doneTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  const doneCount=(S.withdrawals||[]).length;
   document.getElementById('stats').innerHTML=[
     ["存活帳號",alive.length],
     ["考試帳號",exam],
@@ -404,7 +407,7 @@ function renderStats(){
     ["出金中",ex15],
   ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('')
   +`<div class="stat"><div class="stat-label">提款中 (USD)</div><div class="stat-val" style="font-size:16px;color:#6A1B9A">${withdrawStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${withdrawCount} 個帳號</div></div>`
-  +`<div class="stat"><div class="stat-label">有洗 (USD)</div><div class="stat-val" style="font-size:16px;color:#1B5E20">${yoxiStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${yoxiCount} 個帳號</div></div>`;
+  +`<div class="stat"><div class="stat-label">已完成提款 (USD)</div><div class="stat-val" style="font-size:16px;color:#283593">${doneStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${doneCount} 筆記錄</div></div>`;
 }
 
 function setView(v){
@@ -523,9 +526,15 @@ function renderByPerson(container){
         if(accs.length===0){
           html+=`<td style="background:${rowBg};padding:7px 10px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft};color:#d1d5db">—</td>`;
         } else {
-          const accList = accs.map(a=>`<span class="chip ${chipCls(a.status)}" onclick="openAccModal('${a.id}')" style="font-size:10px;margin:1px;cursor:pointer" title="${a.owner} ${a.platform} ${a.code}">${a.code}</span>`).join('');
+          const accList = accs.map(a=>{
+            const accWds=(S.withdrawals||[]).filter(w=>w.code===a.code&&w.owner===a.owner&&w.platform===a.platform);
+            const wdTotal=accWds.reduce((s,w)=>s+(parseFloat(w.withdrawAmount)||0),0);
+            const wdInfo=accWds.length>0?`<div style="font-size:9px;color:#283593;margin-top:1px">${accWds.length}次 $${wdTotal.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>`:'';
+            const wdPending=a.withdrawAmount?`<div style="font-size:9px;color:#6A1B9A;margin-top:1px">提款$${Number(a.withdrawAmount).toLocaleString('en-US',{minimumFractionDigits:0})}</div>`:'';
+            return `<div style="display:inline-block;text-align:center;margin:1px"><span class="chip ${chipCls(a.status)}" onclick="openAccModal('${a.id}')" style="font-size:10px;cursor:pointer">${a.code}</span>${wdPending}${wdInfo}</div>`;
+          }).join('');
           html+=`<td style="background:${rowBg};padding:5px 8px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft}">
-            <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;align-items:center">${accList}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;align-items:flex-start">${accList}</div>
           </td>`;
         }
       });
@@ -931,10 +940,12 @@ function saveWithdrawal(){
     owner: acc.owner, platform: acc.platform, code: acc.code,
     withdrawAmount: amount, note
   });
-  // 清除提款中金額（已到帳）
+  // 清除提款中金額，狀態變已完成提款
   acc.withdrawAmount = '';
+  acc.status = '已完成提款';
+  acc.statusChangedAt = new Date().toISOString();
   persist(); closeModal(); render();
-  toast('已記錄到帳 ✓');
+  toast('提款到帳已記錄，帳號標記為「已完成提款」✓');
 }
 
 // ── Account operations ────────────────────────────────────
