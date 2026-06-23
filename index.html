@@ -773,7 +773,7 @@ function openModal(type, arg1='', arg2=''){
   else if(type==='completeWithdraw'){
     const withdrawingAccs = S.accounts.filter(a=>a.status==='提款中'&&a.code);
     if(!withdrawingAccs.length){
-      alert('目前沒有「提款中」的帳號'); return;
+      alert('目前沒有填寫提款金額的帳號'); return;
     }
     // All accounts that have withdrawAmount (not just 提款中 status)
     const accsWithWd = S.accounts.filter(a=>a.code&&a.status!=="已淘汰"&&parseFloat(a.withdrawAmount)>0);
