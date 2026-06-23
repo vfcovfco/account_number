@@ -187,8 +187,8 @@ tr:last-child td{border-bottom:none}
       <button class="btn btn-p" onclick="openModal('completeWithdraw')">＋ 完成提款</button>
     </div>
     <div class="change-log">
-      <div class="change-log-row change-log-hdr" style="grid-template-columns:110px 80px 80px 100px 120px 120px 1fr">
-        <span>日期</span><span>持有人</span><span>平台</span><span>帳號</span><span>提款金額(USD)</span><span>剩餘金額(USD)</span><span>備註</span>
+      <div class="change-log-row change-log-hdr" style="grid-template-columns:110px 80px 80px 100px 140px 1fr">
+        <span>到帳日期</span><span>持有人</span><span>平台</span><span>帳號</span><span>到帳金額(USD)</span><span>備註</span>
       </div>
       <div id="withdrawal-body"></div>
     </div>
@@ -389,16 +389,22 @@ function renderStats(){
   const exam=alive.filter(a=>a.status==="考試+0"||a.status==="考試+1").length;
   const ex0=alive.filter(a=>a.status&&a.status.startsWith("出金0")).length;
   const ex15=alive.filter(a=>a.status&&(a.status==="出金1（有300+1）"||a.status.startsWith("出金2")||a.status.startsWith("出金3")||a.status.startsWith("出金4")||a.status.startsWith("出金5"))).length;
-  const withdrawing=alive.filter(a=>a.status==="提款中");
-  const withdrawTotal=withdrawing.reduce((sum,a)=>sum+(parseFloat(a.withdrawAmount)||0),0);
+  // 提款中：所有帳號的 withdrawAmount 加總
+  const withdrawTotal=alive.reduce((sum,a)=>sum+(parseFloat(a.withdrawAmount)||0),0);
   const withdrawStr=withdrawTotal>0?'$'+withdrawTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  const withdrawCount=alive.filter(a=>parseFloat(a.withdrawAmount)>0).length;
+  // 有洗：所有帳號的 yoxiBalance 加總
+  const yoxiTotal=alive.reduce((sum,a)=>sum+(parseFloat(a.yoxiBalance)||0),0);
+  const yoxiStr=yoxiTotal>0?'$'+yoxiTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  const yoxiCount=alive.filter(a=>parseFloat(a.yoxiBalance)>0).length;
   document.getElementById('stats').innerHTML=[
     ["存活帳號",alive.length],
     ["考試帳號",exam],
     ["出金0",ex0],
     ["出金中",ex15],
   ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('')
-  +`<div class="stat" style="grid-column:span 2 / auto"><div class="stat-label">提款中金額 (USD)</div><div class="stat-val" style="font-size:18px">${withdrawStr}</div><div style="font-size:11px;color:#6b7280;margin-top:2px">${withdrawing.length} 個帳號提款中</div></div>`;
+  +`<div class="stat"><div class="stat-label">提款中 (USD)</div><div class="stat-val" style="font-size:16px;color:#6A1B9A">${withdrawStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${withdrawCount} 個帳號</div></div>`
+  +`<div class="stat"><div class="stat-label">有洗 (USD)</div><div class="stat-val" style="font-size:16px;color:#1B5E20">${yoxiStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${yoxiCount} 個帳號</div></div>`;
 }
 
 function setView(v){
@@ -435,14 +441,18 @@ function renderByAccount(container){
           <span class="chip ${chipCls(status)}" style="cursor:default">${status}</span>
           <span style="font-size:12px;color:#6b7280">${grp.length} 個</span>
         </div>
-        <div class="acc-tbl-hdr"><span>持有人</span><span>帳號</span><span>狀態變更日</span><span>餘額 (USD)</span><span></span></div>`;
+        <div style="display:grid;grid-template-columns:110px 80px 100px 110px 110px 110px 16px;gap:6px;padding:3px 8px;font-size:11px;color:#9ca3af;font-weight:500"><span>持有人</span><span>帳號</span><span>狀態變更日</span><span>餘額</span><span>提款中</span><span>有洗</span><span></span></div>`;
       grp.forEach(acc=>{
         const bal=acc.balance?'$'+Number(acc.balance).toLocaleString('en-US',{minimumFractionDigits:2}):'—';
-        html+=`<div class="acc-row" onclick="openAccModal('${acc.id}')">
+        const wd=acc.withdrawAmount?'$'+Number(acc.withdrawAmount).toLocaleString('en-US',{minimumFractionDigits:2}):'—';
+        const yoxi=acc.yoxiBalance?'$'+Number(acc.yoxiBalance).toLocaleString('en-US',{minimumFractionDigits:2}):'—';
+        html+=`<div style="display:grid;grid-template-columns:110px 80px 100px 110px 110px 110px 16px;gap:6px;padding:8px;border-radius:8px;cursor:pointer;align-items:center;border:1px solid transparent" onclick="openAccModal('${acc.id}')" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
           <span style="font-size:13px;font-weight:500">${acc.owner}</span>
           <span><code style="background:#f3f4f6;padding:2px 7px;border-radius:4px;font-size:12px">${acc.code}</code></span>
           <span>${fmtDate(acc.statusChangedAt)}</span>
-          <span style="font-size:13px;${acc.balance?'color:#1B5E20;font-weight:500':'color:#9ca3af'}">${bal}</span>
+          <span style="font-size:13px;${acc.balance?'color:#374151':'color:#9ca3af'}">${bal}</span>
+          <span style="font-size:13px;${acc.withdrawAmount?'color:#6A1B9A;font-weight:500':'color:#9ca3af'}">${wd}</span>
+          <span style="font-size:13px;${acc.yoxiBalance?'color:#1B5E20;font-weight:500':'color:#9ca3af'}">${yoxi}</span>
           <span style="color:#9ca3af;font-size:12px">›</span>
         </div>`;
       });
@@ -593,13 +603,12 @@ function renderWithdrawal(){
     body.innerHTML='<div class="empty" style="padding:24px">尚無提款紀錄</div>'; return;
   }
   body.innerHTML=[...S.withdrawals].reverse().map(w=>`
-    <div class="change-log-row" style="grid-template-columns:110px 80px 80px 100px 120px 120px 1fr">
+    <div class="change-log-row" style="grid-template-columns:110px 80px 80px 100px 140px 1fr">
       <span>${w.date||''}</span>
       <span>${w.owner||''}</span>
       <span>${w.platform||''}</span>
       <span><code style="background:#f3f4f6;padding:1px 6px;border-radius:4px">${w.code||''}</code></span>
       <span style="color:#6A1B9A;font-weight:500">${w.withdrawAmount?'$'+Number(w.withdrawAmount).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</span>
-      <span style="color:#1B5E20;font-weight:500">${w.remainAmount?'$'+Number(w.remainAmount).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</span>
       <span style="color:#6b7280">${w.note||''}</span>
     </div>`).join('');
 }
@@ -708,19 +717,20 @@ function openModal(type, arg1='', arg2=''){
     if(!withdrawingAccs.length){
       alert('目前沒有「提款中」的帳號'); return;
     }
-    const accOpts = withdrawingAccs.map(a=>`<option value="${a.id}">${a.owner} · ${a.platform} · ${a.code} (提款金額: ${a.withdrawAmount?'$'+a.withdrawAmount:'未填'})</option>`).join('');
-    body.innerHTML=`<h2>完成提款</h2>
+    // All accounts that have withdrawAmount (not just 提款中 status)
+    const accsWithWd = S.accounts.filter(a=>a.code&&a.status!=="已淘汰"&&parseFloat(a.withdrawAmount)>0);
+    if(!accsWithWd.length){ alert('目前沒有填寫提款金額的帳號'); return; }
+    const accOpts = accsWithWd.map(a=>`<option value="${a.id}">${a.owner} · ${a.platform} · ${a.code} (提款中: $${a.withdrawAmount})</option>`).join('');
+    body.innerHTML=`<h2>✅ 確認提款到帳</h2>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:14px">記錄實際到帳的提款，到帳後提款中金額會清除</p>
       <div class="form-row"><label>帳號</label><select id="wd-acc" onchange="updateWdInfo()">${accOpts}</select></div>
       <div id="wd-info" style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#374151;line-height:1.8"></div>
-      <div class="two-col">
-        <div class="form-row"><label>實際提款金額 (USD)</label><input type="text" id="wd-amount" placeholder="0.00" style="border-color:#CE93D8" /></div>
-        <div class="form-row"><label>剩餘金額 (USD)</label><input type="text" id="wd-remain" placeholder="0.00" /></div>
-      </div>
-      <div class="form-row"><label>日期</label><input type="text" id="wd-date" value="${todayStr()}" /></div>
+      <div class="form-row"><label style="color:#6A1B9A;font-weight:500">實際到帳金額 (USD)</label><input type="text" id="wd-amount" placeholder="0.00" style="border-color:#CE93D8" /></div>
+      <div class="form-row"><label>到帳日期</label><input type="text" id="wd-date" value="${todayStr()}" /></div>
       <div class="form-row"><label>備註</label><input type="text" id="wd-note" placeholder="選填" /></div>
       <div class="form-actions">
         <button class="btn" onclick="closeModal()">取消</button>
-        <button class="btn btn-p" onclick="saveWithdrawal()">確認完成提款</button>
+        <button class="btn btn-p" onclick="saveWithdrawal()">確認到帳</button>
       </div>`;
     setTimeout(()=>updateWdInfo(),0);
   }
@@ -857,31 +867,28 @@ function openAccModal(id){
   const acc=S.accounts.find(a=>a.id===id); if(!acc) return;
   const opts=[...STATUS_LIST,'已淘汰'].map(s=>`<option value="${s}" ${s===acc.status?'selected':''}>${s}</option>`).join('');
   const changedStr=acc.statusChangedAt?new Date(acc.statusChangedAt).toLocaleDateString('zh-TW'):'—';
-  const isWithdrawing = acc.status==='提款中';
-  const isYoxi = acc.status==='有洗';
-  const currentRemain = (acc.withdrawAmount&&acc.balance)
-    ? Math.max(0,parseFloat(acc.balance||0)-parseFloat(acc.withdrawAmount||0)).toFixed(2)
-    : '';
+  const wdTotal = S.withdrawals ? S.withdrawals.filter(w=>w.code===acc.code&&w.owner===acc.owner&&w.platform===acc.platform).reduce((s,w)=>s+(parseFloat(w.withdrawAmount)||0),0) : 0;
+  const wdCount = S.withdrawals ? S.withdrawals.filter(w=>w.code===acc.code&&w.owner===acc.owner&&w.platform===acc.platform).length : 0;
   document.getElementById('modal-body').innerHTML=`<h2>${acc.owner} · ${acc.platform} · <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px">${acc.code}</code></h2>
     <div class="two-col">
-      <div class="form-row"><label>目前狀態</label><select id="d-status" onchange="toggleWithdrawField()">${opts}</select></div>
-      <div class="form-row"><label>餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" oninput="calcRemain()" /></div>
+      <div class="form-row"><label>目前狀態</label><select id="d-status">${opts}</select></div>
+      <div class="form-row"><label>目前餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" /></div>
     </div>
-    <div id="withdraw-field" style="display:${isWithdrawing||isYoxi?'block':'none'}">
-      <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:10px">
-        <div style="font-size:11px;font-weight:600;color:#6A1B9A;margin-bottom:8px">💰 提款資訊</div>
-        <div class="two-col">
-          <div class="form-row">
-            <label style="color:#6A1B9A;font-weight:500">提款金額 (USD)</label>
-            <input type="text" id="d-withdraw-amount" value="${acc.withdrawAmount||''}" placeholder="0.00" style="border-color:#CE93D8" oninput="calcRemain()" />
-          </div>
-          <div class="form-row">
-            <label style="color:#166534;font-weight:500">剩餘金額 → 有洗餘額 (USD)</label>
-            <input type="text" id="d-remain" value="${currentRemain}" placeholder="自動計算" style="border-color:#86efac;background:#f0fdf4" readonly />
-          </div>
+    <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:600;color:#6A1B9A;margin-bottom:8px">💰 提款資訊（提款中金額與有洗餘額可同時存在）</div>
+      <div class="two-col">
+        <div class="form-row">
+          <label style="color:#6A1B9A;font-weight:500">提款中金額 (USD)</label>
+          <input type="text" id="d-withdraw-amount" value="${acc.withdrawAmount||''}" placeholder="0.00" style="border-color:#CE93D8" />
+          <div style="font-size:10px;color:#9ca3af;margin-top:3px">申請提款，等待到帳中</div>
         </div>
-        <div style="font-size:11px;color:#6A1B9A;margin-top:4px">✦ 狀態改為「有洗」儲存後，餘額自動更新為剩餘金額</div>
+        <div class="form-row">
+          <label style="color:#166534;font-weight:500">有洗餘額 (USD)</label>
+          <input type="text" id="d-yoxi-balance" value="${acc.yoxiBalance||''}" placeholder="0.00" style="border-color:#86efac" />
+          <div style="font-size:10px;color:#9ca3af;margin-top:3px">剩餘繼續交易的金額</div>
+        </div>
       </div>
+      ${wdCount>0?`<div style="font-size:11px;color:#6b7280;margin-top:4px;padding-top:8px;border-top:1px solid #e9d5ff">已完成提款：${wdCount} 次 ｜ 共 $${wdTotal.toLocaleString('en-US',{minimumFractionDigits:2})}</div>`:''}
     </div>
     <p style="font-size:12px;color:#9ca3af;margin-top:4px">開戶：${acc.createdAt||'—'} ｜ 狀態變更：${changedStr}</p>
     <div class="form-actions">
@@ -900,39 +907,34 @@ function updateWdInfo(){
   const acc = S.accounts.find(a=>a.id===accId);
   if(!acc) return;
   const info = document.getElementById('wd-info');
+  const pastWd = (S.withdrawals||[]).filter(w=>w.code===acc.code&&w.owner===acc.owner&&w.platform===acc.platform);
   info.innerHTML = `持有人：<strong>${acc.owner}</strong> ｜ 平台：<strong>${acc.platform}</strong> ｜ 帳號：<strong>${acc.code}</strong><br>
-    目前餘額：<strong style="color:#1B5E20">$${Number(acc.balance||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong> ｜
-    原提款金額：<strong style="color:#6A1B9A">${acc.withdrawAmount?'$'+acc.withdrawAmount:'未填'}</strong>`;
+    目前餘額：<strong style="color:#1B5E20">$${Number(acc.balance||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong><br>
+    提款中金額：<strong style="color:#6A1B9A">$${Number(acc.withdrawAmount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong>
+    ${pastWd.length>0?`｜ 過去已到帳 ${pastWd.length} 次`:''}`;
   if(acc.withdrawAmount){
     document.getElementById('wd-amount').value = acc.withdrawAmount;
-    const remain = Math.max(0, parseFloat(acc.balance||0) - parseFloat(acc.withdrawAmount||0));
-    document.getElementById('wd-remain').value = remain.toFixed(2);
   }
 }
 
 function saveWithdrawal(){
   const accId  = document.getElementById('wd-acc').value;
   const amount = document.getElementById('wd-amount').value.trim();
-  const remain = document.getElementById('wd-remain').value.trim();
   const date   = document.getElementById('wd-date').value;
   const note   = document.getElementById('wd-note').value.trim();
-  if(!accId||!amount){ alert('請填寫提款金額'); return; }
+  if(!accId||!amount){ alert('請填寫實際到帳金額'); return; }
   const acc = S.accounts.find(a=>a.id===accId);
   if(!acc) return;
-  // Record withdrawal
   if(!S.withdrawals) S.withdrawals=[];
   S.withdrawals.push({
     id: Date.now()+'', date,
     owner: acc.owner, platform: acc.platform, code: acc.code,
-    withdrawAmount: amount, remainAmount: remain, note
+    withdrawAmount: amount, note
   });
-  // Update account: status → 有洗, balance → remain
-  acc.status = '有洗';
-  acc.statusChangedAt = new Date().toISOString();
-  acc.withdrawAmount = amount;
-  if(remain) acc.balance = remain;
+  // 清除提款中金額（已到帳）
+  acc.withdrawAmount = '';
   persist(); closeModal(); render();
-  toast('提款完成！帳號已標記為「有洗」✓');
+  toast('已記錄到帳 ✓');
 }
 
 // ── Account operations ────────────────────────────────────
@@ -967,31 +969,14 @@ function saveAcc(id){
   const acc=S.accounts.find(a=>a.id===id);
   if(acc){
     const newStatus=document.getElementById('d-status').value;
-    const oldStatus=acc.status;
-    if(newStatus!==oldStatus) acc.statusChangedAt=new Date().toISOString();
+    if(newStatus!==acc.status) acc.statusChangedAt=new Date().toISOString();
     acc.status=newStatus;
     acc.balance=document.getElementById('d-balance').value.trim();
-    if(newStatus==='已淘汰') acc.balance='';
-    // 提款金額
+    if(newStatus==='已淘汰'){ acc.balance=''; acc.withdrawAmount=''; acc.yoxiBalance=''; }
     const wdField=document.getElementById('d-withdraw-amount');
     if(wdField) acc.withdrawAmount=wdField.value.trim();
-    // 變成有洗時，餘額自動變成剩餘金額
-    if(newStatus==='有洗'){
-      const remField=document.getElementById('d-remain');
-      const remain = remField&&remField.value ? remField.value : 
-        (acc.balance&&acc.withdrawAmount ? Math.max(0,parseFloat(acc.balance||0)-parseFloat(acc.withdrawAmount||0)).toFixed(2) : acc.balance);
-      acc.balance=remain;
-      // 自動新增一筆提款紀錄（如果是從提款中變過來）
-      if(oldStatus==='提款中'&&acc.withdrawAmount){
-        if(!S.withdrawals) S.withdrawals=[];
-        S.withdrawals.push({
-          id:Date.now()+'',
-          date:new Date().toLocaleDateString('zh-TW'),
-          owner:acc.owner, platform:acc.platform, code:acc.code,
-          withdrawAmount:acc.withdrawAmount, remainAmount:remain, note:'從帳號詳情完成提款'
-        });
-      }
-    }
+    const yoxiField=document.getElementById('d-yoxi-balance');
+    if(yoxiField) acc.yoxiBalance=yoxiField.value.trim();
   }
   persist(); closeModal(); render();
   toast('已儲存 ✓');
