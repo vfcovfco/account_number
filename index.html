@@ -188,8 +188,8 @@ tr:last-child td{border-bottom:none}
       <button class="btn btn-p" onclick="openModal('completeWithdraw')">＋ 完成提款</button>
     </div>
     <div class="change-log">
-      <div class="change-log-row change-log-hdr" style="grid-template-columns:110px 80px 80px 100px 140px 1fr">
-        <span>到帳日期</span><span>持有人</span><span>平台</span><span>帳號</span><span>到帳金額(USD)</span><span>備註</span>
+      <div class="change-log-row change-log-hdr" style="grid-template-columns:100px 70px 60px 80px 110px 110px 1fr 50px">
+        <span>到帳日期</span><span>持有人</span><span>平台</span><span>帳號</span><span>USD</span><span>TWD</span><span>備註</span><span></span>
       </div>
       <div id="withdrawal-body"></div>
     </div>
@@ -480,8 +480,8 @@ function renderByAccount(container){
       </div>`;
     let any=false;
     STATUS_ORDER.forEach(status=>{
-      // 提款中已在上方紫色區塊顯示，這裡跳過
-      if(status==='提款中') return;
+      // 提款中已在上方紫色區塊顯示；已完成提款不顯示在總覽，只看統計數字
+      if(status==='提款中'||status==='已完成提款') return;
       const grp=alive.filter(a=>a.status===status);
       if(!grp.length) return;
       any=true;
@@ -510,8 +510,8 @@ function renderByAccount(container){
 }
 
 function renderByPerson(container){
-  const alive = S.accounts.filter(a=>a.code&&a.status!=="已淘汰");
-  const statusRows = STATUS_ORDER;
+  const alive = S.accounts.filter(a=>a.code&&a.status!=="已淘汰"&&a.status!=="已完成提款");
+  const statusRows = STATUS_ORDER.filter(s=>s!=='已完成提款');
 
   // Build column headers: each member × each platform
   const cols = [];
@@ -663,13 +663,15 @@ function renderWithdrawal(){
     body.innerHTML='<div class="empty" style="padding:24px">尚無提款紀錄</div>'; return;
   }
   body.innerHTML=[...S.withdrawals].reverse().map(w=>`
-    <div class="change-log-row" style="grid-template-columns:110px 80px 80px 100px 140px 1fr">
+    <div class="change-log-row" style="grid-template-columns:100px 70px 60px 80px 110px 110px 1fr 50px">
       <span>${w.date||''}</span>
       <span>${w.owner||''}</span>
       <span>${w.platform||''}</span>
       <span><code style="background:#f3f4f6;padding:1px 6px;border-radius:4px">${w.code||''}</code></span>
       <span style="color:#6A1B9A;font-weight:500">${w.withdrawAmount?'$'+Number(w.withdrawAmount).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</span>
+      <span style="color:#166534;font-weight:500">${w.twdAmount?'NT$'+Number(w.twdAmount).toLocaleString('en-US'):'—'}</span>
       <span style="color:#6b7280">${w.note||''}</span>
+      <span><button class="btn btn-sm" onclick="editWithdrawal('${w.id}')" style="padding:3px 8px">✎</button></span>
     </div>`).join('');
 }
 
@@ -785,7 +787,10 @@ function openModal(type, arg1='', arg2=''){
       <p style="font-size:12px;color:#6b7280;margin-bottom:14px">記錄實際到帳的提款，到帳後提款中金額會清除</p>
       <div class="form-row"><label>帳號</label><select id="wd-acc" onchange="updateWdInfo()">${accOpts}</select></div>
       <div id="wd-info" style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#374151;line-height:1.8"></div>
-      <div class="form-row"><label style="color:#6A1B9A;font-weight:500">實際到帳金額 (USD)</label><input type="text" id="wd-amount" placeholder="0.00" style="border-color:#CE93D8" /></div>
+      <div class="two-col">
+        <div class="form-row"><label style="color:#6A1B9A;font-weight:500">實際到帳金額 (USD)</label><input type="text" id="wd-amount" placeholder="0.00" style="border-color:#CE93D8" /></div>
+        <div class="form-row"><label style="color:#166534;font-weight:500">兌換台幣金額 (TWD)</label><input type="text" id="wd-twd" placeholder="0" style="border-color:#86efac" /></div>
+      </div>
       <div class="form-row"><label>到帳日期</label><input type="text" id="wd-date" value="${todayStr()}" /></div>
       <div class="form-row"><label>備註</label><input type="text" id="wd-note" placeholder="選填" /></div>
       <div class="form-actions">
@@ -929,26 +934,29 @@ function openAccModal(id){
   const changedStr=acc.statusChangedAt?new Date(acc.statusChangedAt).toLocaleDateString('zh-TW'):'—';
   const wdTotal = S.withdrawals ? S.withdrawals.filter(w=>w.code===acc.code&&w.owner===acc.owner&&w.platform===acc.platform).reduce((s,w)=>s+(parseFloat(w.withdrawAmount)||0),0) : 0;
   const wdCount = S.withdrawals ? S.withdrawals.filter(w=>w.code===acc.code&&w.owner===acc.owner&&w.platform===acc.platform).length : 0;
+  const showWithdrawFields = acc.status==='提款中' || acc.status==='有洗';
   document.getElementById('modal-body').innerHTML=`<h2>${acc.owner} · ${acc.platform} · <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px">${acc.code}</code></h2>
     <div class="two-col">
-      <div class="form-row"><label>目前狀態</label><select id="d-status">${opts}</select></div>
+      <div class="form-row"><label>目前狀態</label><select id="d-status" onchange="toggleAccWithdrawFields()">${opts}</select></div>
       <div class="form-row"><label>目前餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" /></div>
     </div>
-    <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:600;color:#6A1B9A;margin-bottom:8px">💰 提款資訊（提款中金額與有洗餘額可同時存在）</div>
-      <div class="two-col">
-        <div class="form-row">
-          <label style="color:#6A1B9A;font-weight:500">提款中金額 (USD)</label>
-          <input type="text" id="d-withdraw-amount" value="${acc.withdrawAmount||''}" placeholder="0.00" style="border-color:#CE93D8" />
-          <div style="font-size:10px;color:#9ca3af;margin-top:3px">申請提款，等待到帳中</div>
+    <div id="acc-withdraw-fields" style="display:${showWithdrawFields?'block':'none'}">
+      <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;color:#6A1B9A;margin-bottom:8px">💰 提款資訊（提款中金額與有洗餘額可同時存在）</div>
+        <div class="two-col">
+          <div class="form-row">
+            <label style="color:#6A1B9A;font-weight:500">提款中金額 (USD)</label>
+            <input type="text" id="d-withdraw-amount" value="${acc.withdrawAmount||''}" placeholder="0.00" style="border-color:#CE93D8" />
+            <div style="font-size:10px;color:#9ca3af;margin-top:3px">申請提款，等待到帳中</div>
+          </div>
+          <div class="form-row">
+            <label style="color:#166534;font-weight:500">有洗餘額 (USD)</label>
+            <input type="text" id="d-yoxi-balance" value="${acc.yoxiBalance||''}" placeholder="0.00" style="border-color:#86efac" />
+            <div style="font-size:10px;color:#9ca3af;margin-top:3px">剩餘繼續交易的金額</div>
+          </div>
         </div>
-        <div class="form-row">
-          <label style="color:#166534;font-weight:500">有洗餘額 (USD)</label>
-          <input type="text" id="d-yoxi-balance" value="${acc.yoxiBalance||''}" placeholder="0.00" style="border-color:#86efac" />
-          <div style="font-size:10px;color:#9ca3af;margin-top:3px">剩餘繼續交易的金額</div>
-        </div>
+        ${wdCount>0?`<div style="font-size:11px;color:#6b7280;margin-top:4px;padding-top:8px;border-top:1px solid #e9d5ff">已完成提款：${wdCount} 次 ｜ 共 $${wdTotal.toLocaleString('en-US',{minimumFractionDigits:2})}</div>`:''}
       </div>
-      ${wdCount>0?`<div style="font-size:11px;color:#6b7280;margin-top:4px;padding-top:8px;border-top:1px solid #e9d5ff">已完成提款：${wdCount} 次 ｜ 共 $${wdTotal.toLocaleString('en-US',{minimumFractionDigits:2})}</div>`:''}
     </div>
     <p style="font-size:12px;color:#9ca3af;margin-top:4px">開戶：${acc.createdAt||'—'} ｜ 狀態變更：${changedStr}</p>
     <div class="form-actions">
@@ -957,6 +965,12 @@ function openAccModal(id){
       <button class="btn btn-p" onclick="saveAcc('${id}')">儲存</button>
     </div>`;
   document.getElementById('modal-bg').classList.add('open');
+}
+
+function toggleAccWithdrawFields(){
+  const st = document.getElementById('d-status').value;
+  const f = document.getElementById('acc-withdraw-fields');
+  if(f) f.style.display = (st==='提款中'||st==='有洗') ? 'block' : 'none';
 }
 
 
@@ -975,6 +989,44 @@ function updateWdInfo(){
   if(acc.withdrawAmount){
     document.getElementById('wd-amount').value = acc.withdrawAmount;
   }
+}
+
+function editWithdrawal(id){
+  const w = S.withdrawals.find(x=>x.id===id); if(!w) return;
+  document.getElementById('modal-body').innerHTML=`<h2>編輯提款紀錄</h2>
+    <div class="two-col">
+      <div class="form-row"><label>持有人</label><input type="text" value="${w.owner}" disabled style="background:#f9fafb" /></div>
+      <div class="form-row"><label>帳號</label><input type="text" value="${w.platform} · ${w.code}" disabled style="background:#f9fafb" /></div>
+    </div>
+    <div class="two-col">
+      <div class="form-row"><label style="color:#6A1B9A;font-weight:500">到帳金額 (USD)</label><input type="text" id="ew-amount" value="${w.withdrawAmount||''}" style="border-color:#CE93D8" /></div>
+      <div class="form-row"><label style="color:#166534;font-weight:500">台幣金額 (TWD)</label><input type="text" id="ew-twd" value="${w.twdAmount||''}" style="border-color:#86efac" /></div>
+    </div>
+    <div class="form-row"><label>到帳日期</label><input type="text" id="ew-date" value="${w.date||''}" /></div>
+    <div class="form-row"><label>備註</label><input type="text" id="ew-note" value="${w.note||''}" /></div>
+    <div class="form-actions">
+      <button class="btn btn-d" onclick="deleteWithdrawal('${id}')">刪除</button>
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" onclick="saveEditWithdrawal('${id}')">儲存</button>
+    </div>`;
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function saveEditWithdrawal(id){
+  const w = S.withdrawals.find(x=>x.id===id); if(!w) return;
+  w.withdrawAmount = document.getElementById('ew-amount').value.trim();
+  w.twdAmount = document.getElementById('ew-twd').value.trim();
+  w.date = document.getElementById('ew-date').value.trim();
+  w.note = document.getElementById('ew-note').value.trim();
+  persist(); closeModal(); render();
+  toast('已更新 ✓');
+}
+
+function deleteWithdrawal(id){
+  if(!confirm('確定刪除這筆提款紀錄？')) return;
+  S.withdrawals = S.withdrawals.filter(w=>w.id!==id);
+  persist(); closeModal(); render();
+  toast('已刪除 ✓');
 }
 
 function saveWithdrawal(){
