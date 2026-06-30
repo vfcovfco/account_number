@@ -775,29 +775,27 @@ function openModal(type, arg1='', arg2=''){
     setTimeout(()=>updateChAccOpts(),0);
   }
   else if(type==='completeWithdraw'){
-    const withdrawingAccs = S.accounts.filter(a=>a.status==='提款中'&&a.code);
-    if(!withdrawingAccs.length){
-      alert('目前沒有填寫提款金額的帳號'); return;
-    }
-    // All accounts that have withdrawAmount (not just 提款中 status)
-    const accsWithWd = S.accounts.filter(a=>a.code&&a.status!=="已淘汰"&&parseFloat(a.withdrawAmount)>0);
-    if(!accsWithWd.length){ alert('目前沒有填寫提款金額的帳號'); return; }
-    const accOpts = accsWithWd.map(a=>`<option value="${a.id}">${a.owner} · ${a.platform} · ${a.code} (提款中: $${a.withdrawAmount})</option>`).join('');
-    body.innerHTML=`<h2>✅ 確認提款到帳</h2>
-      <p style="font-size:12px;color:#6b7280;margin-bottom:14px">記錄實際到帳的提款，到帳後提款中金額會清除</p>
-      <div class="form-row"><label>帳號</label><select id="wd-acc" onchange="updateWdInfo()">${accOpts}</select></div>
+    const ownerOpts=S.members.map(n=>`<option>${n}</option>`).join('');
+    const platOpts=S.platforms.map(p=>`<option>${p}</option>`).join('');
+    body.innerHTML=`<h2>✅ 新增提款紀錄</h2>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:14px">自由填寫提款到帳紀錄，會自動加總到上方統計</p>
+      <div class="two-col">
+        <div class="form-row"><label>持有人</label><select id="wd-owner" onchange="updateWdAccOpts()">${ownerOpts}</select></div>
+        <div class="form-row"><label>平台</label><select id="wd-plat" onchange="updateWdAccOpts()">${platOpts}</select></div>
+      </div>
+      <div class="form-row"><label>帳號後三碼</label><select id="wd-acc" onchange="updateWdInfo()"></select></div>
       <div id="wd-info" style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#374151;line-height:1.8"></div>
       <div class="two-col">
-        <div class="form-row"><label style="color:#6A1B9A;font-weight:500">實際到帳金額 (USD)</label><input type="text" id="wd-amount" placeholder="0.00" style="border-color:#CE93D8" /></div>
+        <div class="form-row"><label style="color:#6A1B9A;font-weight:500">到帳金額 (USD)</label><input type="text" id="wd-amount" placeholder="0.00" style="border-color:#CE93D8" /></div>
         <div class="form-row"><label style="color:#166534;font-weight:500">兌換台幣金額 (TWD)</label><input type="text" id="wd-twd" placeholder="0" style="border-color:#86efac" /></div>
       </div>
       <div class="form-row"><label>到帳日期</label><input type="text" id="wd-date" value="${todayStr()}" /></div>
       <div class="form-row"><label>備註</label><input type="text" id="wd-note" placeholder="選填" /></div>
       <div class="form-actions">
         <button class="btn" onclick="closeModal()">取消</button>
-        <button class="btn btn-p" onclick="saveWithdrawal()">確認到帳</button>
+        <button class="btn btn-p" onclick="saveWithdrawal()">確認新增</button>
       </div>`;
-    setTimeout(()=>updateWdInfo(),0);
+    setTimeout(()=>updateWdAccOpts(),0);
   }
   document.getElementById('modal-bg').classList.add('open');
 }
