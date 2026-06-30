@@ -976,14 +976,22 @@ function toggleAccWithdrawFields(){
 
 function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); }
 
+function updateWdAccOpts(){
+  const owner=document.getElementById('wd-owner').value;
+  const plat=document.getElementById('wd-plat').value;
+  const accs=S.accounts.filter(a=>a.owner===owner&&a.platform===plat&&a.code&&a.status!=="已淘汰");
+  const sel=document.getElementById('wd-acc');
+  if(sel) sel.innerHTML=accs.map(a=>`<option value="${a.id}">${a.code} (${a.status}${a.withdrawAmount?' · 提款中 $'+a.withdrawAmount:''})</option>`).join('')||`<option value="">— 無帳號 —</option>`;
+  updateWdInfo();
+}
+
 function updateWdInfo(){
   const accId = document.getElementById('wd-acc').value;
   const acc = S.accounts.find(a=>a.id===accId);
-  if(!acc) return;
   const info = document.getElementById('wd-info');
+  if(!acc){ info.innerHTML=''; return; }
   const pastWd = (S.withdrawals||[]).filter(w=>w.code===acc.code&&w.owner===acc.owner&&w.platform===acc.platform);
-  info.innerHTML = `持有人：<strong>${acc.owner}</strong> ｜ 平台：<strong>${acc.platform}</strong> ｜ 帳號：<strong>${acc.code}</strong><br>
-    目前餘額：<strong style="color:#1B5E20">$${Number(acc.balance||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong><br>
+  info.innerHTML = `目前餘額：<strong style="color:#1B5E20">$${Number(acc.balance||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong><br>
     提款中金額：<strong style="color:#6A1B9A">$${Number(acc.withdrawAmount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong>
     ${pastWd.length>0?`｜ 過去已到帳 ${pastWd.length} 次`:''}`;
   if(acc.withdrawAmount){
@@ -1032,23 +1040,30 @@ function deleteWithdrawal(id){
 function saveWithdrawal(){
   const accId  = document.getElementById('wd-acc').value;
   const amount = document.getElementById('wd-amount').value.trim();
+  const twd    = document.getElementById('wd-twd').value.trim();
   const date   = document.getElementById('wd-date').value;
   const note   = document.getElementById('wd-note').value.trim();
-  if(!accId||!amount){ alert('請填寫實際到帳金額'); return; }
+  const owner  = document.getElementById('wd-owner').value;
+  const plat   = document.getElementById('wd-plat').value;
+  if(!amount){ alert('請填寫到帳金額'); return; }
   const acc = S.accounts.find(a=>a.id===accId);
-  if(!acc) return;
+  const code = acc ? acc.code : '';
   if(!S.withdrawals) S.withdrawals=[];
   S.withdrawals.push({
     id: Date.now()+'', date,
-    owner: acc.owner, platform: acc.platform, code: acc.code,
-    withdrawAmount: amount, note
+    owner, platform: plat, code,
+    withdrawAmount: amount, twdAmount: twd, note
   });
-  // 清除提款中金額，狀態變已完成提款
-  acc.withdrawAmount = '';
-  acc.status = '已完成提款';
-  acc.statusChangedAt = new Date().toISOString();
+  if(acc){
+    const oldWdAmount = acc.withdrawAmount;
+    acc.withdrawAmount = '';
+    addLedgerEntry('提款到帳', acc.owner, acc.platform, acc.code,
+      `實際到帳${twd?' (NT$'+twd+')':''}`, oldWdAmount, amount);
+  } else {
+    addLedgerEntry('提款到帳', owner, plat, code, `實際到帳${twd?' (NT$'+twd+')':''}`, '', amount);
+  }
   persist(); closeModal(); render();
-  toast('提款到帳已記錄，帳號標記為「已完成提款」✓');
+  toast('提款紀錄已新增 ✓');
 }
 
 // ── Account operations ────────────────────────────────────
