@@ -187,6 +187,7 @@ tr:last-child td{border-bottom:none}
     <div class="btn-row" style="margin-bottom:12px">
       <button class="btn btn-p" onclick="openModal('completeWithdraw')">＋ 完成提款</button>
     </div>
+    <div class="stat-row" style="grid-template-columns:1fr 1fr" id="withdrawal-totals"></div>
     <div class="change-log">
       <div class="change-log-row change-log-hdr" style="grid-template-columns:100px 70px 60px 80px 110px 110px 1fr 50px">
         <span>到帳日期</span><span>持有人</span><span>平台</span><span>帳號</span><span>USD</span><span>TWD</span><span>備註</span><span></span>
@@ -510,8 +511,8 @@ function renderByAccount(container){
 }
 
 function renderByPerson(container){
-  const alive = S.accounts.filter(a=>a.code&&a.status!=="已淘汰"&&a.status!=="已完成提款");
-  const statusRows = STATUS_ORDER.filter(s=>s!=='已完成提款');
+  const alive = S.accounts.filter(a=>a.code&&a.status!=="已淘汰");
+  const statusRows = STATUS_ORDER;
 
   // Build column headers: each member × each platform
   const cols = [];
@@ -569,11 +570,8 @@ function renderByPerson(container){
           html+=`<td style="background:${rowBg};padding:7px 10px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft};color:#d1d5db">—</td>`;
         } else {
           const accList = accs.map(a=>{
-            const accWds=(S.withdrawals||[]).filter(w=>w.code===a.code&&w.owner===a.owner&&w.platform===a.platform);
-            const wdTotal=accWds.reduce((s,w)=>s+(parseFloat(w.withdrawAmount)||0),0);
-            const wdInfo=accWds.length>0?`<div style="font-size:9px;color:#283593;margin-top:1px">${accWds.length}次 $${wdTotal.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>`:'';
             const wdPending=a.withdrawAmount?`<div style="font-size:9px;color:#6A1B9A;margin-top:1px">提款$${Number(a.withdrawAmount).toLocaleString('en-US',{minimumFractionDigits:0})}</div>`:'';
-            return `<div style="display:inline-block;text-align:center;margin:1px"><span class="chip ${chipCls(a.status)}" onclick="openAccModal('${a.id}')" style="font-size:10px;cursor:pointer">${a.code}</span>${wdPending}${wdInfo}</div>`;
+            return `<div style="display:inline-block;text-align:center;margin:1px"><span class="chip ${chipCls(a.status)}" onclick="openAccModal('${a.id}')" style="font-size:10px;cursor:pointer">${a.code}</span>${wdPending}</div>`;
           }).join('');
           html+=`<td style="background:${rowBg};padding:5px 8px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft}">
             <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;align-items:flex-start">${accList}</div>
@@ -658,7 +656,15 @@ function renderChangelog(){
 
 function renderWithdrawal(){
   const body = document.getElementById('withdrawal-body');
+  const totalsBox = document.getElementById('withdrawal-totals');
   if(!body) return;
+  if(totalsBox){
+    const usdTotal=(S.withdrawals||[]).reduce((s,w)=>s+(parseFloat(w.withdrawAmount)||0),0);
+    const twdTotal=(S.withdrawals||[]).reduce((s,w)=>s+(parseFloat(w.twdAmount)||0),0);
+    totalsBox.innerHTML=`
+      <div class="stat"><div class="stat-label">USD 加總</div><div class="stat-val" style="color:#6A1B9A">$${usdTotal.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+      <div class="stat"><div class="stat-label">TWD 加總</div><div class="stat-val" style="color:#166534">NT$${twdTotal.toLocaleString('en-US')}</div></div>`;
+  }
   if(!S.withdrawals||!S.withdrawals.length){
     body.innerHTML='<div class="empty" style="padding:24px">尚無提款紀錄</div>'; return;
   }
