@@ -183,7 +183,13 @@ tr:last-child td{border-bottom:none}
       </tr></thead><tbody id="daily-sum-body"></tbody></table>
       <div id="daily-sum-empty" class="empty" style="display:none">尚無資料</div>
     </div>
-    <div class="sec-title">🥊 每日對沖明細</div>
+    <div class="sec-title">👥 當日各人帳號狀態（依平台）</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:12px;color:#6b7280">選擇日期</span>
+      <select id="daily-date" onchange="dailySetDate(this.value)" style="padding:7px 10px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit;font-size:13px;background:#fff"></select>
+    </div>
+    <div id="daily-matrix" style="margin-bottom:16px"></div>
+    <div class="sec-title">🥊 對沖明細</div>
     <div class="ledger-wrap">
       <table><thead><tr>
         <th>日期</th><th>階段</th><th>對戰組合（誰的帳號 vs 誰的帳號）</th><th>口數</th><th>勝方</th><th>敗方</th>
@@ -244,6 +250,8 @@ let S = {
 };
 let db = null;
 let ovView = 'acc';
+let dailyPick = null;
+function dailySetDate(v){ dailyPick = v; renderDaily(); }
 
 // ── 狀態定義 ─────────────────────────────────────────────
 const STATUS_LIST = [
@@ -521,24 +529,27 @@ function renderByAccount(container){
 
   // ── 提款中 / 有洗：兩個獨立維度，同一帳號可同時出現在兩區 ──
   html += splitBlock('提款中');
-  html += splitBlock('有洗');
 
   S.platforms.forEach(plat=>{
     const aliveAll=S.accounts.filter(a=>a.platform===plat&&a.code&&a.status!=="已淘汰"&&a.status!=="已完成提款");
-    const alive=aliveAll.filter(a=>!isSplitAcc(a));
-    const splitCnt=aliveAll.length-alive.length;
+    const wdIds=new Set(dimAccs('提款中').map(a=>a.id));
+    const yxIds=new Set(dimAccs('有洗').map(a=>a.id));
+    const alive=aliveAll;
+    const splitCnt=aliveAll.filter(a=>wdIds.has(a.id)).length;
     const platColor=plat===S.platforms[0]?'#1A5276':'#145A32';
     html+=`<div class="plat-block">
       <div class="plat-hdr" style="background:${platColor}">
         <span>${plat}</span>
-        <span style="font-size:12px;opacity:.8">${aliveAll.length} 個存活${splitCnt?`（含 ${splitCnt} 個提款中/有洗）`:''}</span>
+        <span style="font-size:12px;opacity:.8">${aliveAll.length} 個存活${splitCnt?`（含 ${splitCnt} 個提款中）`:''}</span>
         <button onclick="openModal('addAcc','','${plat}')" style="margin-left:auto;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer">＋ 新增</button>
       </div>`;
     let any=false;
     STATUS_ORDER.forEach(status=>{
-      // 提款中／有洗已在上方紫色區塊顯示；已完成提款不顯示在總覽，只看統計數字
-      if(status==='提款中'||status==='有洗'||status==='已完成提款') return;
-      const grp=alive.filter(a=>a.status===status);
+      // 提款中已在上方區塊顯示；已完成提款不顯示在總覽，只看統計數字
+      if(status==='提款中'||status==='已完成提款') return;
+      const grp = status==='有洗'
+        ? alive.filter(a=>yxIds.has(a.id))
+        : alive.filter(a=>a.status===status && !wdIds.has(a.id) && !yxIds.has(a.id));
       if(!grp.length) return;
       any=true;
       html+=`<div class="status-group">
@@ -548,12 +559,14 @@ function renderByAccount(container){
         </div>
         <div class="acc-tbl-hdr"><span>持有人</span><span>帳號</span><span>狀態變更日</span><span>餘額 (USD)</span><span></span></div>`;
       grp.forEach(acc=>{
-        const bal=acc.balance?'$'+Number(acc.balance).toLocaleString('en-US',{minimumFractionDigits:2}):'—';
+        const rawBal = status==='有洗' ? (acc.yoxiBalance||acc.balance) : acc.balance;
+        const bal=rawBal?'$'+Number(rawBal).toLocaleString('en-US',{minimumFractionDigits:2}):'—';
+        const wdTag = (status==='有洗'&&num(acc.withdrawAmount))?`<span style="font-size:10px;color:#6A1B9A;margin-left:6px">同帳號提款中 $${num(acc.withdrawAmount).toLocaleString('en-US',{maximumFractionDigits:0})}</span>`:'';
         html+=`<div class="acc-row" onclick="openAccModal('${acc.id}')">
           <span style="font-size:13px;font-weight:500">${acc.owner}</span>
           <span><code style="background:#f3f4f6;padding:2px 7px;border-radius:4px;font-size:12px">${acc.code}</code></span>
           <span>${fmtDate(acc.statusChangedAt)}</span>
-          <span style="font-size:13px;${acc.balance?'color:#1B5E20;font-weight:500':'color:#9ca3af'}">${bal}</span>
+          <span style="font-size:13px;${rawBal?'color:#1B5E20;font-weight:500':'color:#9ca3af'}">${bal}${wdTag}</span>
           <span style="color:#9ca3af;font-size:12px">›</span>
         </div>`;
       });
@@ -629,9 +642,11 @@ function renderByPerson(container){
           html+=`<td style="background:${rowBg};padding:7px 10px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft};color:#d1d5db">—</td>`;
         } else {
           const accList = accs.map(a=>{
-            let amtTag='';
-            if(status==='提款中'&&num(a.withdrawAmount)) amtTag=`<div style="font-size:9px;color:#6A1B9A;margin-top:1px">$${num(a.withdrawAmount).toLocaleString('en-US',{maximumFractionDigits:0})}</div>`;
-            if(status==='有洗'&&num(a.yoxiBalance))      amtTag=`<div style="font-size:9px;color:#166534;margin-top:1px">$${num(a.yoxiBalance).toLocaleString('en-US',{maximumFractionDigits:0})}</div>`;
+            let amtVal=0, amtColor='#1B5E20';
+            if(status==='提款中'){ amtVal=num(a.withdrawAmount); amtColor='#6A1B9A'; }
+            else if(status==='有洗'){ amtVal=num(a.yoxiBalance)||num(a.balance); amtColor='#166534'; }
+            else { amtVal=num(a.balance); }
+            const amtTag=amtVal?`<div style="font-size:9px;color:${amtColor};margin-top:1px">$${amtVal.toLocaleString('en-US',{maximumFractionDigits:0})}</div>`:'';
             const chipSt=(status==='提款中'||status==='有洗')?status:a.status;
             return `<div style="display:inline-block;text-align:center;margin:1px"><span class="chip ${chipCls(chipSt)}" onclick="openAccModal('${a.id}')" style="font-size:10px;cursor:pointer">${a.code}</span>${amtTag}</div>`;
           }).join('');
@@ -817,6 +832,16 @@ function renderDaily(){
 
   const rows=Object.values(days).filter(d=>d.date).sort((a,b)=>dkey(b.date)-dkey(a.date));
 
+  // 日期選擇器（預設最新一天；使用者選過才沿用）
+  const sel=document.getElementById('daily-date');
+  let pick = (dailyPick && (dailyPick==='__ALL__' || rows.some(r=>r.date===dailyPick)))
+    ? dailyPick : (rows[0]?rows[0].date:'__ALL__');
+  if(sel){
+    sel.innerHTML = rows.map(r=>`<option value="${r.date}">${r.date}</option>`).join('') + `<option value="__ALL__">全部日期</option>`;
+    sel.value = pick;
+  }
+  renderDailyMatrix(pick);
+
   // 上方統計
   const totalLots=matches.reduce((s,m)=>s+num(m.lots),0);
   const totalNew=(S.accounts||[]).length;
@@ -846,8 +871,8 @@ function renderDaily(){
     </tr>`;
   }).join('');
 
-  // 每日對沖明細
-  const det=[...matches].sort((a,b)=>dkey(b.date)-dkey(a.date));
+  // 對沖明細（依所選日期過濾）
+  const det=[...matches].filter(m=>pick==='__ALL__'||!pick||m.date===pick).sort((a,b)=>dkey(b.date)-dkey(a.date));
   document.getElementById('daily-detail-empty').style.display=det.length?'none':'block';
   detBody.innerHTML=det.map(m=>{
     const rs=m.results||[];
@@ -864,6 +889,71 @@ function renderDaily(){
       <td>${loses}</td>
     </tr>`;
   }).join('');
+}
+
+// 當日各人帳號狀態矩陣（人 × 平台）
+function renderDailyMatrix(date){
+  const box=document.getElementById('daily-matrix'); if(!box) return;
+  if(!date || date==='__ALL__'){
+    box.innerHTML=`<div class="empty" style="padding:20px;background:#fff;border-radius:10px">請選擇單一日期以查看當日各人帳號狀態</div>`;
+    return;
+  }
+  // key: owner|plat → 當日事件
+  const cell={};
+  const put=(o,p,item)=>{ const k=o+'|'+p; (cell[k]=cell[k]||[]).push(item); };
+
+  (S.ledger||[]).filter(m=>m.type==='對沖'&&m.date===date).forEach(m=>{
+    (m.results||[]).forEach(r=>put(r.owner,r.plat,{kind:'match',code:r.acc,from:r.oldStatus,to:r.newStatus,result:r.result,lots:m.lots}));
+  });
+  (S.accounts||[]).filter(a=>a.createdAt===date).forEach(a=>put(a.owner,a.platform,{kind:'new',code:a.code,to:a.status}));
+  (S.withdrawals||[]).filter(w=>w.date===date).forEach(w=>put(w.owner,w.platform,{kind:'wd',code:w.code,amt:w.withdrawAmount}));
+
+  const plats=S.platforms||[];
+  let h=`<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+  <table style="border-collapse:collapse;width:100%;font-size:12px;min-width:600px"><thead><tr>
+    <th style="background:#1F3864;color:#fff;padding:8px 12px;text-align:left;position:sticky;left:0;z-index:2;min-width:80px">持有人</th>`;
+  plats.forEach((p,i)=>{
+    const bg=i===0?'#1A5276':(i===1?'#145A32':'#7D6608');
+    h+=`<th style="background:${bg};color:#fff;padding:8px 12px;text-align:center;min-width:150px">${p}</th>`;
+  });
+  h+=`</tr></thead><tbody>`;
+
+  let anyData=false;
+  (S.members||[]).forEach((mName,mi)=>{
+    const bg=mi%2===0?'#fff':'#f9fafb';
+    h+=`<tr><td style="background:${bg};padding:8px 12px;font-weight:600;position:sticky;left:0;border-bottom:1px solid #f0f0f0;border-right:1px solid #e5e7eb">${mName}</td>`;
+    plats.forEach(p=>{
+      const items=cell[mName+'|'+p]||[];
+      if(items.length) anyData=true;
+      h+=`<td style="background:${bg};padding:6px 8px;border-bottom:1px solid #f0f0f0;border-left:1px solid #f0f0f0;vertical-align:top">`;
+      if(!items.length){ h+=`<div style="text-align:center;color:#d1d5db">—</div>`; }
+      items.forEach(it=>{
+        if(it.kind==='match'){
+          const cls=it.result==='勝'?'bwin':(it.result==='敗（保留）'?'bkeep':'blose');
+          h+=`<div style="margin-bottom:5px;line-height:1.5">
+            <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px;font-size:11px">${it.code}</code>
+            <span class="badge ${cls}" style="margin-left:4px">${it.result}</span>${it.lots?`<span style="font-size:10px;color:#6b7280;margin-left:3px">${it.lots}口</span>`:''}
+            <div style="font-size:10px;color:#6b7280;margin-top:1px">${it.from||''} → <strong style="color:#1F3864">${it.to||''}</strong></div>
+          </div>`;
+        } else if(it.kind==='new'){
+          h+=`<div style="margin-bottom:5px;line-height:1.5">
+            <code style="background:#e0f2fe;padding:1px 6px;border-radius:4px;font-size:11px">${it.code}</code>
+            <span class="badge" style="background:#e0f2fe;color:#075985;margin-left:4px">新增</span>
+            <div style="font-size:10px;color:#6b7280;margin-top:1px">${it.to||''}</div>
+          </div>`;
+        } else {
+          h+=`<div style="margin-bottom:5px;line-height:1.5">
+            <code style="background:#ede9fe;padding:1px 6px;border-radius:4px;font-size:11px">${it.code||'—'}</code>
+            <span class="badge" style="background:#ede9fe;color:#5b21b6;margin-left:4px">到帳 ${usd(it.amt)}</span>
+          </div>`;
+        }
+      });
+      h+=`</td>`;
+    });
+    h+=`</tr>`;
+  });
+  h+=`</tbody></table></div>`;
+  box.innerHTML = anyData ? h : `<div class="empty" style="padding:20px;background:#fff;border-radius:10px">${date} 無帳號異動紀錄</div>`;
 }
 
 // ── 每人出金次數（依平台）──────────────────────────────────
