@@ -50,6 +50,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .chip-yoxi{background:#F3E5F5;color:#6A1B9A;border-color:#CE93D8}
 .chip-done{background:#E8EAF6;color:#283593;border-color:#9FA8DA}
 .chip-dead{background:#f3f4f6;color:#9ca3af;text-decoration:line-through;opacity:.6}
+.sec-title{font-size:13px;font-weight:600;color:#374151;margin:0 0 8px 2px}
 .ledger-wrap{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;padding:10px 12px;font-size:11px;font-weight:500;color:#6b7280;background:#f9fafb;border-bottom:1px solid #e5e7eb;white-space:nowrap}
@@ -153,6 +154,7 @@ tr:last-child td{border-bottom:none}
   <div class="tabs">
     <button class="tab active" data-tab="overview" onclick="switchTab(this)">帳號總覽</button>
     <button class="tab" data-tab="ledger" onclick="switchTab(this)">流水帳</button>
+    <button class="tab" data-tab="daily" onclick="switchTab(this)">每日追蹤</button>
     <button class="tab" data-tab="changelog" onclick="switchTab(this)">帳號異動紀錄</button>
     <button class="tab" data-tab="withdrawal" onclick="switchTab(this)">提款紀錄</button>
     <button class="tab" data-tab="settings" onclick="switchTab(this)">設定</button>
@@ -167,9 +169,26 @@ tr:last-child td{border-bottom:none}
   <div id="tab-ledger" class="view">
     <div class="ledger-wrap">
       <table><thead><tr>
-        <th>日期</th><th>類型</th><th>平台組合</th><th>參與帳號與結果</th>
+        <th>日期</th><th>類型</th><th>階段</th><th>口數</th><th>平台組合</th><th>參與帳號與結果</th>
       </tr></thead><tbody id="ledger-body"></tbody></table>
       <div id="ledger-empty" class="empty" style="display:none">尚無記錄</div>
+    </div>
+  </div>
+  <div id="tab-daily" class="view">
+    <div class="stat-row" style="grid-template-columns:repeat(4,1fr)" id="daily-stats"></div>
+    <div class="sec-title">📅 每日彙總</div>
+    <div class="ledger-wrap" style="margin-bottom:16px">
+      <table><thead><tr>
+        <th>日期</th><th>對沖場次</th><th>總口數</th><th>當日新增帳號</th><th>升級</th><th>淘汰</th><th>提款到帳</th>
+      </tr></thead><tbody id="daily-sum-body"></tbody></table>
+      <div id="daily-sum-empty" class="empty" style="display:none">尚無資料</div>
+    </div>
+    <div class="sec-title">🥊 每日對沖明細</div>
+    <div class="ledger-wrap">
+      <table><thead><tr>
+        <th>日期</th><th>階段</th><th>對戰組合（誰的帳號 vs 誰的帳號）</th><th>口數</th><th>勝方</th><th>敗方</th>
+      </tr></thead><tbody id="daily-detail-body"></tbody></table>
+      <div id="daily-detail-empty" class="empty" style="display:none">尚無對沖紀錄</div>
     </div>
   </div>
   <div id="tab-changelog" class="view">
@@ -188,6 +207,9 @@ tr:last-child td{border-bottom:none}
       <button class="btn btn-p" onclick="openModal('completeWithdraw')">＋ 完成提款</button>
     </div>
     <div class="stat-row" style="grid-template-columns:1fr 1fr" id="withdrawal-totals"></div>
+    <div class="sec-title">👤 每人出金次數（依平台）</div>
+    <div class="ledger-wrap" style="margin-bottom:16px"><div id="wd-count-table"></div></div>
+    <div class="sec-title">📋 提款明細</div>
     <div class="change-log">
       <div class="change-log-row change-log-hdr" style="grid-template-columns:100px 70px 60px 80px 110px 110px 1fr 50px">
         <span>到帳日期</span><span>持有人</span><span>平台</span><span>帳號</span><span>USD</span><span>TWD</span><span>備註</span><span></span>
@@ -386,6 +408,14 @@ function fmtDate(d){
   return `<span class="date-tag ${diff<=3?'recent':''}">${str}</span>`;
 }
 function todayStr(){ return new Date().toLocaleDateString('zh-TW'); }
+function num(v){ return parseFloat(v)||0; }
+function usd(v,dash){ const n=num(v); if(!n) return dash===false?'$0.00':'—'; return '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function dkey(d){ const t=Date.parse((d||'').replace(/-/g,'/')); return isNaN(t)?0:t; }
+// 帳號是否處於「提款中／有洗」雙軌狀態
+function isSplitAcc(a){
+  return a.code && a.status!=='已淘汰' && a.status!=='已完成提款' &&
+    (a.status==='提款中' || a.status==='有洗' || num(a.withdrawAmount)>0 || num(a.yoxiBalance)>0);
+}
 
 // ── Render ────────────────────────────────────────────────
 
@@ -416,6 +446,10 @@ function renderStats(){
   const withdrawTotal=alive.reduce((sum,a)=>sum+(parseFloat(a.withdrawAmount)||0),0);
   const withdrawStr=withdrawTotal>0?'$'+withdrawTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   const withdrawCount=alive.filter(a=>parseFloat(a.withdrawAmount)>0).length;
+  // 有洗：所有帳號的 yoxiBalance 加總
+  const yoxiTotal=alive.reduce((sum,a)=>sum+(parseFloat(a.yoxiBalance)||0),0);
+  const yoxiStr=yoxiTotal>0?'$'+yoxiTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  const yoxiCount=alive.filter(a=>parseFloat(a.yoxiBalance)>0).length;
   // 已完成提款：所有提款紀錄加總
   const doneTotal=(S.withdrawals||[]).reduce((sum,w)=>sum+(parseFloat(w.withdrawAmount)||0),0);
   const doneStr=doneTotal>0?'$'+doneTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
@@ -427,6 +461,7 @@ function renderStats(){
     ["出金中",ex15],
   ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('')
   +`<div class="stat"><div class="stat-label">提款中 (USD)</div><div class="stat-val" style="font-size:16px;color:#6A1B9A">${withdrawStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${withdrawCount} 個帳號</div></div>`
+  +`<div class="stat"><div class="stat-label">有洗餘額 (USD)</div><div class="stat-val" style="font-size:16px;color:#166534">${yoxiStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${yoxiCount} 個帳號</div></div>`
   +`<div class="stat"><div class="stat-label">已完成提款 (USD)</div><div class="stat-val" style="font-size:16px;color:#283593">${doneStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${doneCount} 筆記錄</div></div>`;
 }
 
@@ -443,46 +478,66 @@ function renderOverview(){
   else renderByPerson(container);
 }
 
+// 取得某維度下的帳號（提款中 / 有洗）
+function dimAccs(dim){
+  const key = dim==='提款中' ? 'withdrawAmount' : 'yoxiBalance';
+  return S.accounts.filter(a=>a.code && a.status!=='已淘汰' && a.status!=='已完成提款' &&
+    (num(a[key])>0 || (a.status===dim && !num(a.withdrawAmount) && !num(a.yoxiBalance))));
+}
+
+// 提款中 / 有洗 區塊
+function splitBlock(dim){
+  const accs = dimAccs(dim);
+  if(!accs.length) return '';
+  const key   = dim==='提款中' ? 'withdrawAmount' : 'yoxiBalance';
+  const hdrBg = dim==='提款中' ? '#6A1B9A' : '#166534';
+  const brd   = dim==='提款中' ? '#CE93D8' : '#86efac';
+  const icon  = dim==='提款中' ? '💰' : '🔁';
+  const total = accs.reduce((s,a)=>s+num(a[key]),0);
+  let h=`<div class="plat-block" style="margin-bottom:14px;border:2px solid ${brd}">
+    <div class="plat-hdr" style="background:${hdrBg}">
+      <span>${icon} ${dim}</span>
+      <span style="font-size:12px;opacity:.8">${accs.length} 個帳號</span>
+      <span style="font-size:12px;opacity:.85;margin-left:auto">合計 $${total.toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+    </div>
+    <div class="acc-tbl-hdr" style="grid-template-columns:100px 90px 70px 1fr 20px"><span>持有人</span><span>帳號</span><span>平台</span><span>${dim}金額 (USD)</span><span></span></div>`;
+  accs.forEach(acc=>{
+    const v=num(acc[key]);
+    const other = dim==='提款中' ? num(acc.yoxiBalance) : num(acc.withdrawAmount);
+    const otherTag = other>0 ? `<span style="font-size:10px;color:#9ca3af;margin-left:6px">同帳號另有${dim==='提款中'?'有洗':'提款中'} $${other.toLocaleString('en-US',{maximumFractionDigits:0})}</span>` : '';
+    h+=`<div class="acc-row" style="grid-template-columns:100px 90px 70px 1fr 20px" onclick="openAccModal('${acc.id}')">
+      <span style="font-size:13px;font-weight:500">${acc.owner}</span>
+      <span><code style="background:#f3f4f6;padding:2px 7px;border-radius:4px;font-size:12px">${acc.code}</code></span>
+      <span style="font-size:12px;color:#6b7280">${acc.platform}</span>
+      <span style="font-size:13px;font-weight:500;color:${v?hdrBg:'#d1d5db'}">${v?'$'+v.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}${otherTag}</span>
+      <span style="color:#9ca3af;font-size:12px">›</span>
+    </div>`;
+  });
+  return h+`</div>`;
+}
+
 function renderByAccount(container){
   let html='';
 
-  // ── 提款中區塊（有填 withdrawAmount 且非已完成提款的帳號）──
-  const withdrawingAccs = S.accounts.filter(a=>a.code&&a.status!=="已淘汰"&&a.status!=="已完成提款"&&parseFloat(a.withdrawAmount)>0);
-  if(withdrawingAccs.length>0){
-    const totalWd = withdrawingAccs.reduce((s,a)=>s+(parseFloat(a.withdrawAmount)||0),0);
-    html+=`<div class="plat-block" style="margin-bottom:14px;border:2px solid #CE93D8">
-      <div class="plat-hdr" style="background:#6A1B9A">
-        <span>💰 提款中</span>
-        <span style="font-size:12px;opacity:.8">${withdrawingAccs.length} 個帳號</span>
-        <span style="font-size:12px;opacity:.8;margin-left:auto">合計 $${totalWd.toLocaleString('en-US',{minimumFractionDigits:2})}</span>
-      </div>
-      <div class="acc-tbl-hdr"><span>持有人</span><span>帳號</span><span>平台</span><span>提款金額 (USD)</span><span></span></div>`;
-    withdrawingAccs.forEach(acc=>{
-      const wd='$'+Number(acc.withdrawAmount).toLocaleString('en-US',{minimumFractionDigits:2});
-      html+=`<div class="acc-row" onclick="openAccModal('${acc.id}')">
-        <span style="font-size:13px;font-weight:500">${acc.owner}</span>
-        <span><code style="background:#f3f4f6;padding:2px 7px;border-radius:4px;font-size:12px">${acc.code}</code></span>
-        <span style="font-size:12px;color:#6b7280">${acc.platform}</span>
-        <span style="font-size:13px;color:#6A1B9A;font-weight:500">${wd}</span>
-        <span style="color:#9ca3af;font-size:12px">›</span>
-      </div>`;
-    });
-    html+=`</div>`;
-  }
+  // ── 提款中 / 有洗：兩個獨立維度，同一帳號可同時出現在兩區 ──
+  html += splitBlock('提款中');
+  html += splitBlock('有洗');
 
   S.platforms.forEach(plat=>{
-    const alive=S.accounts.filter(a=>a.platform===plat&&a.code&&a.status!=="已淘汰");
+    const aliveAll=S.accounts.filter(a=>a.platform===plat&&a.code&&a.status!=="已淘汰"&&a.status!=="已完成提款");
+    const alive=aliveAll.filter(a=>!isSplitAcc(a));
+    const splitCnt=aliveAll.length-alive.length;
     const platColor=plat===S.platforms[0]?'#1A5276':'#145A32';
     html+=`<div class="plat-block">
       <div class="plat-hdr" style="background:${platColor}">
         <span>${plat}</span>
-        <span style="font-size:12px;opacity:.8">${alive.length} 個存活</span>
+        <span style="font-size:12px;opacity:.8">${aliveAll.length} 個存活${splitCnt?`（含 ${splitCnt} 個提款中/有洗）`:''}</span>
         <button onclick="openModal('addAcc','','${plat}')" style="margin-left:auto;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer">＋ 新增</button>
       </div>`;
     let any=false;
     STATUS_ORDER.forEach(status=>{
-      // 提款中已在上方紫色區塊顯示；已完成提款不顯示在總覽，只看統計數字
-      if(status==='提款中'||status==='已完成提款') return;
+      // 提款中／有洗已在上方紫色區塊顯示；已完成提款不顯示在總覽，只看統計數字
+      if(status==='提款中'||status==='有洗'||status==='已完成提款') return;
       const grp=alive.filter(a=>a.status===status);
       if(!grp.length) return;
       any=true;
@@ -525,7 +580,9 @@ function renderByPerson(container){
   // Count totals per status
   const statusTotals = {};
   statusRows.forEach(st=>{
-    statusTotals[st] = alive.filter(a=>a.status===st).length;
+    statusTotals[st] = (st==='提款中'||st==='有洗')
+      ? dimAccs(st).length
+      : alive.filter(a=>a.status===st&&!isSplitAcc(a)).length;
   });
 
   let html = `<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
@@ -564,14 +621,19 @@ function renderByPerson(container){
 
     S.members.forEach(name=>{
       S.platforms.forEach(plat=>{
-        const accs = alive.filter(a=>a.owner===name&&a.platform===plat&&a.status===status);
+        const accs = (status==='提款中'||status==='有洗')
+          ? dimAccs(status).filter(a=>a.owner===name&&a.platform===plat)
+          : alive.filter(a=>a.owner===name&&a.platform===plat&&a.status===status&&!isSplitAcc(a));
         const borderLeft = plat===S.platforms[0] ? '2px solid #e5e7eb' : '1px solid #f0f0f0';
         if(accs.length===0){
           html+=`<td style="background:${rowBg};padding:7px 10px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft};color:#d1d5db">—</td>`;
         } else {
           const accList = accs.map(a=>{
-            const wdPending=a.withdrawAmount?`<div style="font-size:9px;color:#6A1B9A;margin-top:1px">提款$${Number(a.withdrawAmount).toLocaleString('en-US',{minimumFractionDigits:0})}</div>`:'';
-            return `<div style="display:inline-block;text-align:center;margin:1px"><span class="chip ${chipCls(a.status)}" onclick="openAccModal('${a.id}')" style="font-size:10px;cursor:pointer">${a.code}</span>${wdPending}</div>`;
+            let amtTag='';
+            if(status==='提款中'&&num(a.withdrawAmount)) amtTag=`<div style="font-size:9px;color:#6A1B9A;margin-top:1px">$${num(a.withdrawAmount).toLocaleString('en-US',{maximumFractionDigits:0})}</div>`;
+            if(status==='有洗'&&num(a.yoxiBalance))      amtTag=`<div style="font-size:9px;color:#166534;margin-top:1px">$${num(a.yoxiBalance).toLocaleString('en-US',{maximumFractionDigits:0})}</div>`;
+            const chipSt=(status==='提款中'||status==='有洗')?status:a.status;
+            return `<div style="display:inline-block;text-align:center;margin:1px"><span class="chip ${chipCls(chipSt)}" onclick="openAccModal('${a.id}')" style="font-size:10px;cursor:pointer">${a.code}</span>${amtTag}</div>`;
           }).join('');
           html+=`<td style="background:${rowBg};padding:5px 8px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft}">
             <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;align-items:flex-start">${accList}</div>
@@ -595,7 +657,7 @@ function renderByPerson(container){
   let grandTotal = 0;
   S.members.forEach(name=>{
     S.platforms.forEach(plat=>{
-      const cnt = alive.filter(a=>a.owner===name&&a.platform===plat).length;
+      const cnt = S.accounts.filter(a=>a.code&&a.status!=='已淘汰'&&a.owner===name&&a.platform===plat).length;
       grandTotal += cnt;
       const borderLeft = plat===S.platforms[0] ? '2px solid #e5e7eb' : '1px solid #f0f0f0';
       html+=`<td style="padding:8px 10px;text-align:center;font-weight:600;border-top:2px solid #F39C12;border-left:${borderLeft};color:${cnt>0?'#1F3864':'#9ca3af'}">${cnt>0?cnt:'—'}</td>`;
@@ -614,12 +676,12 @@ function renderLedger(){
   if(!S.ledger||!S.ledger.length){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
   tbody.innerHTML=[...S.ledger].reverse().map(m=>{
-    const isBalance = ['餘額調整','申請提款','有洗餘額','提款到帳','帳號異動'].includes(m.type);
+    const isBalance = ['餘額調整','申請提款','有洗餘額','提款到帳','帳號異動','新增帳號'].includes(m.type);
     const platCombo=`${m.platforms||''}`;
     let resultHtml='';
     if(isBalance){
       const r=(m.results||[])[0]||{};
-      const typeCls={'餘額調整':'bkeep','申請提款':'blose','有洗餘額':'bwin','提款到帳':'bwin','帳號異動':'bkeep'}[m.type]||'bkeep';
+      const typeCls={'餘額調整':'bkeep','申請提款':'blose','有洗餘額':'bwin','提款到帳':'bwin','帳號異動':'bkeep','新增帳號':'bkeep'}[m.type]||'bkeep';
       const arrow=r.oldBalance&&r.balance?` ${r.oldBalance} → $${Number(r.balance).toLocaleString('en-US',{minimumFractionDigits:2})}`:'';
       resultHtml=`<span class="badge ${typeCls}">${r.owner||''}·${r.acc||''}</span> ${r.newStatus||''}${arrow}`;
     } else {
@@ -629,11 +691,15 @@ function renderLedger(){
         return `<span class="badge ${cls}">${r.owner}·${r.acc} → ${r.newStatus}${bal}</span>`;
       }).join(' ');
     }
+    const stageTxt=m.stage?`<span class="badge" style="background:#eef2ff;color:#3730a3">${m.stage}</span>`:'<span style="color:#d1d5db">—</span>';
+    const lotsTxt=m.lots?`<strong style="color:#1F3864">${m.lots}</strong> 口`:'<span style="color:#d1d5db">—</span>';
     return `<tr>
       <td style="white-space:nowrap">${m.date||''}</td>
       <td><span class="badge" style="background:#f3f4f6;color:#374151">${m.type||'對沖'}</span></td>
+      <td style="white-space:nowrap">${stageTxt}</td>
+      <td style="white-space:nowrap">${lotsTxt}</td>
       <td style="white-space:nowrap">${platCombo}</td>
-      <td>${resultHtml}</td>
+      <td>${resultHtml}${m.note?`<div style="font-size:11px;color:#9ca3af;margin-top:2px">${m.note}</div>`:''}</td>
     </tr>`;
   }).join('');
 }
@@ -665,6 +731,7 @@ function renderWithdrawal(){
       <div class="stat"><div class="stat-label">USD 加總</div><div class="stat-val" style="color:#6A1B9A">$${usdTotal.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
       <div class="stat"><div class="stat-label">TWD 加總</div><div class="stat-val" style="color:#166534">NT$${twdTotal.toLocaleString('en-US')}</div></div>`;
   }
+  renderWdCount();
   if(!S.withdrawals||!S.withdrawals.length){
     body.innerHTML='<div class="empty" style="padding:24px">尚無提款紀錄</div>'; return;
   }
@@ -715,8 +782,132 @@ function renderSettings(){
   </div>`;
 }
 
+
+// ── 每日追蹤 ──────────────────────────────────────────────
+function renderDaily(){
+  const sumBody=document.getElementById('daily-sum-body');
+  const detBody=document.getElementById('daily-detail-body');
+  if(!sumBody||!detBody) return;
+
+  const matches=(S.ledger||[]).filter(m=>m.type==='對沖');
+  const days={};
+  const D=d=>{ if(!days[d]) days[d]={date:d,matches:0,lots:0,win:0,lose:0,dead:0,newAcc:{},wdCount:0,wdAmt:0}; return days[d]; };
+
+  matches.forEach(m=>{
+    const d=D(m.date||'');
+    d.matches++;
+    d.lots+=num(m.lots);
+    (m.results||[]).forEach(r=>{
+      if(r.result==='勝') d.win++;
+      else if(r.result==='敗（淘汰）'){ d.lose++; d.dead++; }
+      else d.lose++;
+    });
+  });
+  // 當日新增（購買）帳號，依平台
+  (S.accounts||[]).forEach(a=>{
+    if(!a.createdAt) return;
+    const d=D(a.createdAt);
+    d.newAcc[a.platform]=(d.newAcc[a.platform]||0)+1;
+  });
+  // 當日提款到帳
+  (S.withdrawals||[]).forEach(w=>{
+    const d=D(w.date||'');
+    d.wdCount++; d.wdAmt+=num(w.withdrawAmount);
+  });
+
+  const rows=Object.values(days).filter(d=>d.date).sort((a,b)=>dkey(b.date)-dkey(a.date));
+
+  // 上方統計
+  const totalLots=matches.reduce((s,m)=>s+num(m.lots),0);
+  const totalNew=(S.accounts||[]).length;
+  const st=document.getElementById('daily-stats');
+  if(st) st.innerHTML=[
+    ['有紀錄天數',rows.length],
+    ['對沖總場次',matches.length],
+    ['累計口數',totalLots.toLocaleString('en-US')],
+    ['累計購買帳號',totalNew]
+  ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+
+  // 每日彙總表
+  document.getElementById('daily-sum-empty').style.display=rows.length?'none':'block';
+  sumBody.innerHTML=rows.map(d=>{
+    const newTxt=Object.keys(d.newAcc).length
+      ? Object.entries(d.newAcc).map(([p,n])=>`<span class="badge" style="background:#e0f2fe;color:#075985">${p} ${n}</span>`).join(' ')
+        +` <span style="color:#6b7280">共 ${Object.values(d.newAcc).reduce((a,b)=>a+b,0)} 個</span>`
+      : '<span style="color:#d1d5db">—</span>';
+    return `<tr>
+      <td style="white-space:nowrap;font-weight:500">${d.date}</td>
+      <td>${d.matches||'<span style="color:#d1d5db">—</span>'}</td>
+      <td>${d.lots?`<strong style="color:#1F3864">${d.lots}</strong> 口`:'<span style="color:#d1d5db">—</span>'}</td>
+      <td>${newTxt}</td>
+      <td>${d.win?`<span class="badge bwin">升級 ${d.win}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
+      <td>${d.dead?`<span class="badge blose">淘汰 ${d.dead}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
+      <td>${d.wdCount?`<span class="badge" style="background:#ede9fe;color:#5b21b6">${d.wdCount} 筆 ${usd(d.wdAmt)}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  // 每日對沖明細
+  const det=[...matches].sort((a,b)=>dkey(b.date)-dkey(a.date));
+  document.getElementById('daily-detail-empty').style.display=det.length?'none':'block';
+  detBody.innerHTML=det.map(m=>{
+    const rs=m.results||[];
+    const combo=rs.map(r=>`<span style="white-space:nowrap"><strong>${r.owner}</strong>·${r.plat}·<code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">${r.acc}</code><span style="font-size:10px;color:#9ca3af"> ${r.oldStatus||''}</span></span>`).join(' <span style="color:#9ca3af">vs</span> ');
+    const wins=rs.filter(r=>r.result==='勝').map(r=>`<span class="badge bwin">${r.owner}·${r.acc} → ${r.newStatus}</span>`).join(' ')||'<span style="color:#d1d5db">—</span>';
+    const loses=rs.filter(r=>r.result!=='勝').map(r=>`<span class="badge ${r.result==='敗（保留）'?'bkeep':'blose'}">${r.owner}·${r.acc} → ${r.newStatus}</span>`).join(' ')||'<span style="color:#d1d5db">—</span>';
+    const stage=m.stage||[...new Set(rs.map(r=>r.oldStatus).filter(Boolean))].join(' / ');
+    return `<tr>
+      <td style="white-space:nowrap">${m.date||''}</td>
+      <td>${stage?`<span class="badge" style="background:#eef2ff;color:#3730a3">${stage}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
+      <td>${combo}${m.note?`<div style="font-size:11px;color:#9ca3af;margin-top:2px">${m.note}</div>`:''}</td>
+      <td style="white-space:nowrap">${m.lots?`<strong>${m.lots}</strong> 口`:'<span style="color:#d1d5db">—</span>'}</td>
+      <td>${wins}</td>
+      <td>${loses}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 每人出金次數（依平台）──────────────────────────────────
+function renderWdCount(){
+  const box=document.getElementById('wd-count-table'); if(!box) return;
+  const ws=S.withdrawals||[];
+  const plats=S.platforms||[];
+  const get=(m,p)=>ws.filter(w=>w.owner===m&&w.platform===p);
+  let h=`<table><thead><tr><th>持有人</th>`;
+  plats.forEach(p=>{ h+=`<th style="text-align:center">${p} 次數</th><th style="text-align:center">${p} USD</th>`; });
+  h+=`<th style="text-align:center;background:#FFF9C4">總次數</th><th style="text-align:center;background:#FFF9C4">總 USD</th><th style="text-align:center;background:#FFF9C4">總 TWD</th></tr></thead><tbody>`;
+  const tot={cnt:0,usd:0,twd:0,byPlat:{}};
+  (S.members||[]).forEach(m=>{
+    const mine=ws.filter(w=>w.owner===m);
+    h+=`<tr><td style="font-weight:500">${m}</td>`;
+    plats.forEach(p=>{
+      const arr=get(m,p);
+      const amt=arr.reduce((s,w)=>s+num(w.withdrawAmount),0);
+      tot.byPlat[p]=tot.byPlat[p]||{cnt:0,usd:0};
+      tot.byPlat[p].cnt+=arr.length; tot.byPlat[p].usd+=amt;
+      h+=`<td style="text-align:center;${arr.length?'font-weight:600;color:#1F3864':'color:#d1d5db'}">${arr.length||'—'}</td>`;
+      h+=`<td style="text-align:center;${amt?'color:#6A1B9A':'color:#d1d5db'}">${amt?usd(amt):'—'}</td>`;
+    });
+    const mUsd=mine.reduce((s,w)=>s+num(w.withdrawAmount),0);
+    const mTwd=mine.reduce((s,w)=>s+num(w.twdAmount),0);
+    tot.cnt+=mine.length; tot.usd+=mUsd; tot.twd+=mTwd;
+    h+=`<td style="text-align:center;background:#fffdf0;font-weight:600">${mine.length||'—'}</td>`;
+    h+=`<td style="text-align:center;background:#fffdf0;color:#6A1B9A">${mUsd?usd(mUsd):'—'}</td>`;
+    h+=`<td style="text-align:center;background:#fffdf0;color:#166534">${mTwd?'NT$'+mTwd.toLocaleString('en-US'):'—'}</td></tr>`;
+  });
+  h+=`<tr style="background:#FFF9C4"><td style="font-weight:700">合計</td>`;
+  plats.forEach(p=>{
+    const t=tot.byPlat[p]||{cnt:0,usd:0};
+    h+=`<td style="text-align:center;font-weight:700">${t.cnt||'—'}</td><td style="text-align:center;font-weight:600;color:#6A1B9A">${t.usd?usd(t.usd):'—'}</td>`;
+  });
+  h+=`<td style="text-align:center;font-weight:700">${tot.cnt||'—'}</td>`;
+  h+=`<td style="text-align:center;font-weight:700;color:#6A1B9A">${tot.usd?usd(tot.usd):'—'}</td>`;
+  h+=`<td style="text-align:center;font-weight:700;color:#166534">${tot.twd?'NT$'+tot.twd.toLocaleString('en-US'):'—'}</td></tr>`;
+  h+=`</tbody></table>`;
+  box.innerHTML=h;
+}
+
 function render(){
-  renderStats(); renderOverview(); renderLedger(); renderChangelog(); renderWithdrawal();
+  renderStats(); renderOverview(); renderLedger(); renderChangelog(); renderWithdrawal(); renderDaily();
 }
 
 function switchTab(el){
@@ -726,6 +917,7 @@ function switchTab(el){
   document.getElementById('tab-'+el.dataset.tab).classList.add('active');
   if(el.dataset.tab==='settings') renderSettings();
   if(el.dataset.tab==='withdrawal') renderWithdrawal();
+  if(el.dataset.tab==='daily') renderDaily();
 }
 
 // ── Modals ────────────────────────────────────────────────
@@ -740,7 +932,10 @@ function openModal(type, arg1='', arg2=''){
         <div class="form-row"><label>持有人</label><select id="a-owner">${ownerOpts}</select></div>
         <div class="form-row"><label>平台</label><select id="a-plat">${platOpts}</select></div>
       </div>
-      <div class="form-row"><label>帳號後三碼</label><input type="text" id="a-code" placeholder="例如 001" maxlength="5" /></div>
+      <div class="two-col">
+        <div class="form-row"><label>帳號後三碼</label><input type="text" id="a-code" placeholder="例如 001" maxlength="5" /></div>
+        <div class="form-row"><label>開戶／購買日期</label><input type="text" id="a-created" value="${todayStr()}" /></div>
+      </div>
       <div class="two-col">
         <div class="form-row"><label>初始狀態</label><select id="a-status">${STATUS_LIST.map(s=>`<option>${s}</option>`).join('')}</select></div>
         <div class="form-row"><label>目前餘額 (USD)</label><input type="text" id="a-balance" placeholder="0.00" /></div>
@@ -818,6 +1013,10 @@ function buildMatchModal(body){
           <option value="4">4 個帳號</option>
         </select>
       </div>
+    </div>
+    <div class="two-col">
+      <div class="form-row"><label>口數（本場對沖）</label><input type="text" id="m-lots" placeholder="例如 5" /></div>
+      <div class="form-row"><label>備註</label><input type="text" id="m-note" placeholder="選填" /></div>
     </div>
     <div id="acc-rows-container"></div>
     <div class="form-actions">
@@ -899,6 +1098,8 @@ function updateRowNewStatus(i){
 
 function recordMatch(){
   const date=document.getElementById('m-date').value;
+  const lots=(document.getElementById('m-lots')?.value||'').trim();
+  const note=(document.getElementById('m-note')?.value||'').trim();
   const count=parseInt(document.getElementById('m-count').value)||2;
   const results=[];
   const platSet=new Set();
@@ -921,11 +1122,14 @@ function recordMatch(){
     if(newStatus==='已淘汰') acc.balance='';
     results.push({owner, plat, acc:acc.code, oldStatus, newStatus, result, balance:bal});
   }
+  const stages=[...new Set(results.map(r=>r.oldStatus).filter(Boolean))];
   if(!S.ledger) S.ledger=[];
   S.ledger.push({
     id:Date.now()+'', date,
     type:'對沖',
     platforms:[...platSet].join(' vs '),
+    lots, note,
+    stage: stages.join(' / '),
     results
   });
   persist(); closeModal(); render();
@@ -942,21 +1146,21 @@ function openAccModal(id){
   document.getElementById('modal-body').innerHTML=`<h2>${acc.owner} · ${acc.platform} · <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px">${acc.code}</code></h2>
     <div class="two-col">
       <div class="form-row"><label>目前狀態</label><select id="d-status" onchange="toggleAccWithdrawFields()">${opts}</select></div>
-      <div class="form-row"><label>目前餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" /></div>
+      <div class="form-row" id="d-balance-row" style="display:${showWithdrawFields?'none':'block'}"><label>目前餘額 (USD)</label><input type="text" id="d-balance" value="${acc.balance||''}" placeholder="0.00" /></div>
     </div>
     <div id="acc-withdraw-fields" style="display:${showWithdrawFields?'block':'none'}">
       <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:10px">
-        <div style="font-size:11px;font-weight:600;color:#6A1B9A;margin-bottom:8px">💰 提款資訊（提款中金額與有洗餘額可同時存在）</div>
+        <div style="font-size:11px;font-weight:600;color:#6A1B9A;margin-bottom:8px">同一帳號同時存在兩個維度</div>
         <div class="two-col">
           <div class="form-row">
-            <label style="color:#6A1B9A;font-weight:500">提款中金額 (USD)</label>
+            <label style="color:#6A1B9A;font-weight:500">💰 提款中 (USD)</label>
             <input type="text" id="d-withdraw-amount" value="${acc.withdrawAmount||''}" placeholder="0.00" style="border-color:#CE93D8" />
-            <div style="font-size:10px;color:#9ca3af;margin-top:3px">申請提款，等待到帳中</div>
+            <div style="font-size:10px;color:#9ca3af;margin-top:3px">已申請提款、等待到帳的金額</div>
           </div>
           <div class="form-row">
-            <label style="color:#166534;font-weight:500">有洗餘額 (USD)</label>
-            <input type="text" id="d-yoxi-balance" value="${acc.yoxiBalance||''}" placeholder="0.00" style="border-color:#86efac" />
-            <div style="font-size:10px;color:#9ca3af;margin-top:3px">剩餘繼續交易的金額</div>
+            <label style="color:#166534;font-weight:500">🔁 有洗 (USD)</label>
+            <input type="text" id="d-yoxi-balance" value="${acc.yoxiBalance||acc.balance||''}" placeholder="0.00" style="border-color:#86efac" />
+            <div style="font-size:10px;color:#9ca3af;margin-top:3px">留在帳上繼續洗的金額</div>
           </div>
         </div>
         ${wdCount>0?`<div style="font-size:11px;color:#6b7280;margin-top:4px;padding-top:8px;border-top:1px solid #e9d5ff">已完成提款：${wdCount} 次 ｜ 共 $${wdTotal.toLocaleString('en-US',{minimumFractionDigits:2})}</div>`:''}
@@ -972,9 +1176,16 @@ function openAccModal(id){
 }
 
 function toggleAccWithdrawFields(){
-  const st = document.getElementById('d-status').value;
-  const f = document.getElementById('acc-withdraw-fields');
-  if(f) f.style.display = (st==='提款中'||st==='有洗') ? 'block' : 'none';
+  const st  = document.getElementById('d-status').value;
+  const f   = document.getElementById('acc-withdraw-fields');
+  const row = document.getElementById('d-balance-row');
+  const split = (st==='提款中'||st==='有洗');
+  if(f)   f.style.display   = split ? 'block' : 'none';
+  if(row) row.style.display = split ? 'none'  : 'block';
+  // 切換成提款中／有洗時，原本的餘額直接帶到「有洗」
+  const yx = document.getElementById('d-yoxi-balance');
+  const bal= document.getElementById('d-balance');
+  if(split && yx && !yx.value.trim() && bal && bal.value.trim()) yx.value = bal.value.trim();
 }
 
 
@@ -1060,14 +1271,19 @@ function saveWithdrawal(){
   });
   if(acc){
     const oldWdAmount = acc.withdrawAmount;
+    const oldBal = acc.balance;
     acc.withdrawAmount = '';
+    // 提款那筆已離開帳戶，總餘額 = 剩下的「有洗」金額
+    if(num(acc.yoxiBalance)>0 || num(oldBal)>0){
+      acc.balance = acc.yoxiBalance || '';
+    }
     addLedgerEntry('提款到帳', acc.owner, acc.platform, acc.code,
-      `實際到帳${twd?' (NT$'+twd+')':''}`, oldWdAmount, amount);
+      `實際到帳${twd?' (NT$'+twd+')':''}｜帳上剩餘（有洗）$${num(acc.yoxiBalance).toLocaleString('en-US',{minimumFractionDigits:2})}`, oldWdAmount, amount);
   } else {
     addLedgerEntry('提款到帳', owner, plat, code, `實際到帳${twd?' (NT$'+twd+')':''}`, '', amount);
   }
   persist(); closeModal(); render();
-  toast('提款紀錄已新增 ✓');
+  toast('提款紀錄已新增 ✓ 帳號狀態請手動調整');
 }
 
 // ── Account operations ────────────────────────────────────
@@ -1079,8 +1295,10 @@ function addAccount(){
   const balance=document.getElementById('a-balance').value.trim();
   if(!code){ alert('請填帳號後三碼'); return; }
   if(!S.accounts) S.accounts=[];
+  const created=(document.getElementById('a-created')?.value||'').trim()||todayStr();
   S.accounts.push({id:Date.now()+'',owner,platform:plat,code,status,balance,
-    createdAt:todayStr(), statusChangedAt:new Date().toISOString()});
+    createdAt:created, statusChangedAt:new Date().toISOString()});
+  addLedgerEntry('新增帳號', owner, plat, code, `${status}（開戶日 ${created}）`, '', balance||'');
   persist(); closeModal(); render();
 }
 
@@ -1108,15 +1326,19 @@ function saveAcc(id){
     const oldYoxi=acc.yoxiBalance;
     if(newStatus!==acc.status) acc.statusChangedAt=new Date().toISOString();
     acc.status=newStatus;
-    const newBalance=document.getElementById('d-balance').value.trim();
-    acc.balance=newBalance;
-    if(newStatus==='已淘汰'){ acc.balance=''; acc.withdrawAmount=''; acc.yoxiBalance=''; }
+    const balField=document.getElementById('d-balance');
+    let newBalance=balField?balField.value.trim():(acc.balance||'');
     const wdField=document.getElementById('d-withdraw-amount');
     const newWd=wdField?wdField.value.trim():'';
     if(wdField) acc.withdrawAmount=newWd;
     const yoxiField=document.getElementById('d-yoxi-balance');
     const newYoxi=yoxiField?yoxiField.value.trim():'';
     if(yoxiField) acc.yoxiBalance=newYoxi;
+    // 提款中／有洗：餘額即為「有洗」金額，兩者同步
+    if(newStatus==='提款中'||newStatus==='有洗') newBalance=newYoxi;
+    acc.balance=newBalance;
+    if(newStatus==='已完成提款'){ acc.withdrawAmount=''; }
+    if(newStatus==='已淘汰'){ acc.balance=''; acc.withdrawAmount=''; acc.yoxiBalance=''; }
     // 記錄餘額異動到流水帳
     if(newBalance!==oldBalance && newBalance)
       addLedgerEntry('餘額調整', acc.owner, acc.platform, acc.code,
