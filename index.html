@@ -1293,6 +1293,10 @@ function buildMatchModal(body){
           <option value="2">2 個帳號（1 vs 1）</option>
           <option value="3">3 個帳號</option>
           <option value="4">4 個帳號</option>
+          <option value="5">5 個帳號</option>
+          <option value="6">6 個帳號</option>
+          <option value="7">7 個帳號</option>
+          <option value="8">8 個帳號</option>
         </select>
       </div>
     </div>
@@ -1319,6 +1323,7 @@ function buildAccRows(){
     const statusOpts=STATUS_LIST.map(s=>`<option>${s}</option>`).join('');
     const resultOpts=`<option>勝</option><option>敗（淘汰）</option><option>敗（保留）</option>`;
     html+=`<div class="acc-result-row" id="acc-row-${i}">
+      <div style="grid-column:span 4;font-size:11px;font-weight:600;color:#9ca3af;margin-bottom:-2px">帳號 ${i+1}</div>
       <div>
         <label>持有人</label>
         <select id="r-owner-${i}" onchange="updateRowAcc(${i})">${nameOpts}</select>
