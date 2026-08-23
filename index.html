@@ -143,7 +143,7 @@ tr:last-child td{border-bottom:none}
   <div class="topbar-right">
     <span class="sync-dot" id="sync-dot"></span>
     <span class="sync-label" id="sync-label">連線中...</span>
-    <button class="btn btn-sm" onclick="openModal('match')" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">＋ 對沖</button>
+    <button class="btn btn-sm" onclick="openModal('match')" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">＋ 交易</button>
     <button class="btn btn-sm" onclick="openModal('addAcc')" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">＋ 帳號</button>
     <button class="btn btn-sm" onclick="openModal('changeAcc')" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">🔄 帳號異動</button>
   </div>
@@ -169,32 +169,40 @@ tr:last-child td{border-bottom:none}
   <div id="tab-ledger" class="view">
     <div class="ledger-wrap">
       <table><thead><tr>
-        <th>日期</th><th>類型</th><th>階段</th><th>口數</th><th>平台組合</th><th>參與帳號與結果</th>
+        <th>日期</th><th>類型</th><th>階段</th><th>口數</th><th>平台組合</th><th>參與帳號與結果</th><th style="width:40px"></th>
       </tr></thead><tbody id="ledger-body"></tbody></table>
       <div id="ledger-empty" class="empty" style="display:none">尚無記錄</div>
     </div>
   </div>
   <div id="tab-daily" class="view">
     <div class="stat-row" style="grid-template-columns:repeat(4,1fr)" id="daily-stats"></div>
-    <div class="sec-title">📅 每日彙總</div>
-    <div class="ledger-wrap" style="margin-bottom:16px">
-      <table><thead><tr>
-        <th>日期</th><th>對沖場次</th><th>總口數</th><th>當日新增帳號</th><th>升級</th><th>淘汰</th><th>提款到帳</th>
-      </tr></thead><tbody id="daily-sum-body"></tbody></table>
-      <div id="daily-sum-empty" class="empty" style="display:none">尚無資料</div>
+    <div class="view-toggle">
+      <button class="vtbtn active" id="dv-day" onclick="setDailyView('day')">單日檢視</button>
+      <button class="vtbtn" id="dv-week" onclick="setDailyView('week')">近一週下單狀況</button>
     </div>
-    <div class="sec-title">👥 當日各人帳號狀態（依平台）</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <span style="font-size:12px;color:#6b7280">選擇日期</span>
-      <select id="daily-date" onchange="dailySetDate(this.value)" style="padding:7px 10px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit;font-size:13px;background:#fff"></select>
+    <div id="daily-day-wrap">
+      <div class="sec-title">👥 當日各人帳號狀態（依平台）</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:12px;color:#6b7280">選擇日期</span>
+        <select id="daily-date" onchange="dailySetDate(this.value)" style="padding:7px 10px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit;font-size:13px;background:#fff"></select>
+      </div>
+      <div id="daily-matrix" style="margin-bottom:16px"></div>
+      <div class="sec-title">🥊 交易明細</div>
+      <div class="ledger-wrap">
+        <table><thead><tr>
+          <th>日期</th><th>階段</th><th>對戰組合（誰的帳號 vs 誰的帳號）</th><th>口數</th><th>勝方</th><th>敗方</th>
+        </tr></thead><tbody id="daily-detail-body"></tbody></table>
+        <div id="daily-detail-empty" class="empty" style="display:none">尚無交易紀錄</div>
+      </div>
     </div>
-    <div id="daily-matrix" style="margin-bottom:16px"></div>
-    <div class="sec-title">🥊 對沖明細</div>
-    <div class="ledger-wrap">
-      <table><thead><tr>
-        <th>日期</th><th>階段</th><th>對戰組合（誰的帳號 vs 誰的帳號）</th><th>口數</th><th>勝方</th><th>敗方</th>
-      </tr></thead><tbody id="daily-detail-body"></tbody></table>
-      <div id="daily-detail-empty" class="empty" style="display:none">尚無對沖紀錄</div>
+    <div id="daily-week-wrap" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <button class="btn btn-sm" onclick="weekShift(-1)">← 上一週</button>
+        <span id="week-label" style="font-size:13px;font-weight:600;color:#1F3864"></span>
+        <button class="btn btn-sm" onclick="weekShift(1)">下一週 →</button>
+        <button class="btn btn-sm" onclick="weekShift(0)">本週</button>
+      </div>
+      <div id="week-matrix"></div>
     </div>
   </div>
   <div id="tab-changelog" class="view">
@@ -251,6 +259,8 @@ let S = {
 let db = null;
 let ovView = 'acc';
 let dailyPick = null;
+let dailyView = 'day';
+let weekOffset = 0;
 function dailySetDate(v){ dailyPick = v; renderDaily(); }
 
 // ── 狀態定義 ─────────────────────────────────────────────
@@ -455,9 +465,10 @@ function renderStats(){
   const withdrawStr=withdrawTotal>0?'$'+withdrawTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   const withdrawCount=alive.filter(a=>parseFloat(a.withdrawAmount)>0).length;
   // 有洗：所有帳號的 yoxiBalance 加總
-  const yoxiTotal=alive.reduce((sum,a)=>sum+(parseFloat(a.yoxiBalance)||0),0);
+  const yoxiAccs=alive.filter(a=>a.status==='有洗');
+  const yoxiTotal=yoxiAccs.reduce((sum,a)=>sum+yoxiAmt(a),0);
   const yoxiStr=yoxiTotal>0?'$'+yoxiTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
-  const yoxiCount=alive.filter(a=>parseFloat(a.yoxiBalance)>0).length;
+  const yoxiCount=yoxiAccs.length;
   // 已完成提款：所有提款紀錄加總
   const doneTotal=(S.withdrawals||[]).reduce((sum,w)=>sum+(parseFloat(w.withdrawAmount)||0),0);
   const doneStr=doneTotal>0?'$'+doneTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
@@ -488,10 +499,15 @@ function renderOverview(){
 
 // 取得某維度下的帳號（提款中 / 有洗）
 function dimAccs(dim){
-  const key = dim==='提款中' ? 'withdrawAmount' : 'yoxiBalance';
+  if(dim==='有洗'){
+    // 有洗＝帳號狀態，狀態一改成出金1 就會回到出金1 的欄位
+    return S.accounts.filter(a=>a.code && a.status==='有洗');
+  }
+  // 提款中＝仍有等待到帳的金額（與帳號狀態無關）
   return S.accounts.filter(a=>a.code && a.status!=='已淘汰' && a.status!=='已完成提款' &&
-    (num(a[key])>0 || (a.status===dim && !num(a.withdrawAmount) && !num(a.yoxiBalance))));
+    (num(a.withdrawAmount)>0 || a.status==='提款中'));
 }
+function yoxiAmt(a){ return num(a.yoxiBalance)||num(a.balance); }
 
 // 提款中 / 有洗 區塊
 function splitBlock(dim){
@@ -533,7 +549,6 @@ function renderByAccount(container){
   S.platforms.forEach(plat=>{
     const aliveAll=S.accounts.filter(a=>a.platform===plat&&a.code&&a.status!=="已淘汰"&&a.status!=="已完成提款");
     const wdIds=new Set(dimAccs('提款中').map(a=>a.id));
-    const yxIds=new Set(dimAccs('有洗').map(a=>a.id));
     const alive=aliveAll;
     const splitCnt=aliveAll.filter(a=>wdIds.has(a.id)).length;
     const platColor=plat===S.platforms[0]?'#1A5276':'#145A32';
@@ -547,9 +562,7 @@ function renderByAccount(container){
     STATUS_ORDER.forEach(status=>{
       // 提款中已在上方區塊顯示；已完成提款不顯示在總覽，只看統計數字
       if(status==='提款中'||status==='已完成提款') return;
-      const grp = status==='有洗'
-        ? alive.filter(a=>yxIds.has(a.id))
-        : alive.filter(a=>a.status===status && !wdIds.has(a.id) && !yxIds.has(a.id));
+      const grp = alive.filter(a=>a.status===status);
       if(!grp.length) return;
       any=true;
       html+=`<div class="status-group">
@@ -560,6 +573,7 @@ function renderByAccount(container){
         <div class="acc-tbl-hdr"><span>持有人</span><span>帳號</span><span>狀態變更日</span><span>餘額 (USD)</span><span></span></div>`;
       grp.forEach(acc=>{
         const rawBal = status==='有洗' ? (acc.yoxiBalance||acc.balance) : acc.balance;
+        const _unused=0;
         const bal=rawBal?'$'+Number(rawBal).toLocaleString('en-US',{minimumFractionDigits:2}):'—';
         const wdTag = (status==='有洗'&&num(acc.withdrawAmount))?`<span style="font-size:10px;color:#6A1B9A;margin-left:6px">同帳號提款中 $${num(acc.withdrawAmount).toLocaleString('en-US',{maximumFractionDigits:0})}</span>`:'';
         html+=`<div class="acc-row" onclick="openAccModal('${acc.id}')">
@@ -593,9 +607,9 @@ function renderByPerson(container){
   // Count totals per status
   const statusTotals = {};
   statusRows.forEach(st=>{
-    statusTotals[st] = (st==='提款中'||st==='有洗')
-      ? dimAccs(st).length
-      : alive.filter(a=>a.status===st&&!isSplitAcc(a)).length;
+    statusTotals[st] = (st==='提款中')
+      ? dimAccs('提款中').length
+      : alive.filter(a=>a.status===st).length;
   });
 
   let html = `<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
@@ -634,9 +648,9 @@ function renderByPerson(container){
 
     S.members.forEach(name=>{
       S.platforms.forEach(plat=>{
-        const accs = (status==='提款中'||status==='有洗')
-          ? dimAccs(status).filter(a=>a.owner===name&&a.platform===plat)
-          : alive.filter(a=>a.owner===name&&a.platform===plat&&a.status===status&&!isSplitAcc(a));
+        const accs = (status==='提款中')
+          ? dimAccs('提款中').filter(a=>a.owner===name&&a.platform===plat)
+          : alive.filter(a=>a.owner===name&&a.platform===plat&&a.status===status);
         const borderLeft = plat===S.platforms[0] ? '2px solid #e5e7eb' : '1px solid #f0f0f0';
         if(accs.length===0){
           html+=`<td style="background:${rowBg};padding:7px 10px;text-align:center;border-bottom:1px solid #f0f0f0;border-left:${borderLeft};color:#d1d5db">—</td>`;
@@ -644,7 +658,7 @@ function renderByPerson(container){
           const accList = accs.map(a=>{
             let amtVal=0, amtColor='#1B5E20';
             if(status==='提款中'){ amtVal=num(a.withdrawAmount); amtColor='#6A1B9A'; }
-            else if(status==='有洗'){ amtVal=num(a.yoxiBalance)||num(a.balance); amtColor='#166534'; }
+            else if(status==='有洗'){ amtVal=yoxiAmt(a); amtColor='#166534'; }
             else { amtVal=num(a.balance); }
             const amtTag=amtVal?`<div style="font-size:9px;color:${amtColor};margin-top:1px">$${amtVal.toLocaleString('en-US',{maximumFractionDigits:0})}</div>`:'';
             const chipSt=(status==='提款中'||status==='有洗')?status:a.status;
@@ -690,7 +704,7 @@ function renderLedger(){
   const empty=document.getElementById('ledger-empty');
   if(!S.ledger||!S.ledger.length){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
-  tbody.innerHTML=[...S.ledger].reverse().map(m=>{
+  tbody.innerHTML=S.ledger.map((m,i)=>({m,i})).reverse().map(({m,i})=>{
     const isBalance = ['餘額調整','申請提款','有洗餘額','提款到帳','帳號異動','新增帳號'].includes(m.type);
     const platCombo=`${m.platforms||''}`;
     let resultHtml='';
@@ -706,15 +720,18 @@ function renderLedger(){
         return `<span class="badge ${cls}">${r.owner}·${r.acc} → ${r.newStatus}${bal}</span>`;
       }).join(' ');
     }
+    const lotsFromRows=(m.results||[]).reduce((s,r)=>s+num(r.lots),0);
     const stageTxt=m.stage?`<span class="badge" style="background:#eef2ff;color:#3730a3">${m.stage}</span>`:'<span style="color:#d1d5db">—</span>';
-    const lotsTxt=m.lots?`<strong style="color:#1F3864">${m.lots}</strong> 口`:'<span style="color:#d1d5db">—</span>';
+    const lotsShow=lotsLabel(m);
+    const lotsTxt=lotsShow?`<strong style="color:#1F3864">${lotsShow}</strong> 口`:'<span style="color:#d1d5db">—</span>';
     return `<tr>
       <td style="white-space:nowrap">${m.date||''}</td>
-      <td><span class="badge" style="background:#f3f4f6;color:#374151">${m.type||'對沖'}</span></td>
+      <td><span class="badge" style="background:#f3f4f6;color:#374151">${m.type==='對沖'?'交易':(m.type||'交易')}</span></td>
       <td style="white-space:nowrap">${stageTxt}</td>
       <td style="white-space:nowrap">${lotsTxt}</td>
       <td style="white-space:nowrap">${platCombo}</td>
       <td>${resultHtml}${m.note?`<div style="font-size:11px;color:#9ca3af;margin-top:2px">${m.note}</div>`:''}</td>
+      <td><button class="btn btn-sm" onclick="editLedger(${i})" style="padding:3px 8px">✎</button></td>
     </tr>`;
   }).join('');
 }
@@ -799,92 +816,76 @@ function renderSettings(){
 
 
 // ── 每日追蹤 ──────────────────────────────────────────────
+function isTrade(m){ return m && (m.type==='交易' || m.type==='對沖'); }
+function resLots(m,r){ return num(r&&r.lots)||0; }
+// 顯示用：兩邊口數相同就顯示單一數字（對敲同口數），不同才列出各自口數
+function lotsLabel(m){
+  const vals=(m.results||[]).map(r=>num(r.lots)).filter(v=>v>0);
+  if(!vals.length) return num(m.lots)?String(num(m.lots)):'';
+  const uniq=[...new Set(vals)];
+  return uniq.length===1 ? String(uniq[0]) : vals.join(' / ');
+}
+function matchLots(m){
+  const per=(m.results||[]).reduce((s,r)=>s+num(r.lots),0);
+  return per || num(m.lots);
+}
+function setDailyView(v){
+  dailyView=v;
+  document.getElementById('dv-day').classList.toggle('active',v==='day');
+  document.getElementById('dv-week').classList.toggle('active',v==='week');
+  document.getElementById('daily-day-wrap').style.display  = v==='day'?'block':'none';
+  document.getElementById('daily-week-wrap').style.display = v==='week'?'block':'none';
+  renderDaily();
+}
+function weekShift(n){ weekOffset = n===0 ? 0 : weekOffset+n; renderDaily(); }
+
 function renderDaily(){
-  const sumBody=document.getElementById('daily-sum-body');
   const detBody=document.getElementById('daily-detail-body');
-  if(!sumBody||!detBody) return;
+  if(!detBody) return;
+  const matches=(S.ledger||[]).filter(isTrade);
 
-  const matches=(S.ledger||[]).filter(m=>m.type==='對沖');
-  const days={};
-  const D=d=>{ if(!days[d]) days[d]={date:d,matches:0,lots:0,win:0,lose:0,dead:0,newAcc:{},wdCount:0,wdAmt:0}; return days[d]; };
+  // 上方統計
+  const dateSet=new Set();
+  matches.forEach(m=>{ if(m.date) dateSet.add(m.date); });
+  (S.accounts||[]).forEach(a=>{ if(a.createdAt) dateSet.add(a.createdAt); });
+  (S.withdrawals||[]).forEach(w=>{ if(w.date) dateSet.add(w.date); });
+  const dates=[...dateSet].sort((a,b)=>dkey(b)-dkey(a));
+  const totalLots=matches.reduce((s,m)=>s+matchLots(m),0);
+  const st=document.getElementById('daily-stats');
+  if(st) st.innerHTML=[
+    ['有紀錄天數',dates.length],
+    ['交易總場次',matches.length],
+    ['累計口數（各帳號加總）',totalLots.toLocaleString('en-US')],
+    ['累計購買帳號',(S.accounts||[]).length]
+  ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('');
 
-  matches.forEach(m=>{
-    const d=D(m.date||'');
-    d.matches++;
-    d.lots+=num(m.lots);
-    (m.results||[]).forEach(r=>{
-      if(r.result==='勝') d.win++;
-      else if(r.result==='敗（淘汰）'){ d.lose++; d.dead++; }
-      else d.lose++;
-    });
-  });
-  // 當日新增（購買）帳號，依平台
-  (S.accounts||[]).forEach(a=>{
-    if(!a.createdAt) return;
-    const d=D(a.createdAt);
-    d.newAcc[a.platform]=(d.newAcc[a.platform]||0)+1;
-  });
-  // 當日提款到帳
-  (S.withdrawals||[]).forEach(w=>{
-    const d=D(w.date||'');
-    d.wdCount++; d.wdAmt+=num(w.withdrawAmount);
-  });
+  if(dailyView==='week'){ renderWeekMatrix(matches); return; }
 
-  const rows=Object.values(days).filter(d=>d.date).sort((a,b)=>dkey(b.date)-dkey(a.date));
-
-  // 日期選擇器（預設最新一天；使用者選過才沿用）
+  // 日期選擇器（預設最新一天）
   const sel=document.getElementById('daily-date');
-  let pick = (dailyPick && (dailyPick==='__ALL__' || rows.some(r=>r.date===dailyPick)))
-    ? dailyPick : (rows[0]?rows[0].date:'__ALL__');
+  let pick = (dailyPick && (dailyPick==='__ALL__' || dates.includes(dailyPick)))
+    ? dailyPick : (dates[0]||'__ALL__');
   if(sel){
-    sel.innerHTML = rows.map(r=>`<option value="${r.date}">${r.date}</option>`).join('') + `<option value="__ALL__">全部日期</option>`;
+    sel.innerHTML = dates.map(d=>`<option value="${d}">${d}</option>`).join('') + `<option value="__ALL__">全部日期</option>`;
     sel.value = pick;
   }
   renderDailyMatrix(pick);
 
-  // 上方統計
-  const totalLots=matches.reduce((s,m)=>s+num(m.lots),0);
-  const totalNew=(S.accounts||[]).length;
-  const st=document.getElementById('daily-stats');
-  if(st) st.innerHTML=[
-    ['有紀錄天數',rows.length],
-    ['對沖總場次',matches.length],
-    ['累計口數',totalLots.toLocaleString('en-US')],
-    ['累計購買帳號',totalNew]
-  ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('');
-
-  // 每日彙總表
-  document.getElementById('daily-sum-empty').style.display=rows.length?'none':'block';
-  sumBody.innerHTML=rows.map(d=>{
-    const newTxt=Object.keys(d.newAcc).length
-      ? Object.entries(d.newAcc).map(([p,n])=>`<span class="badge" style="background:#e0f2fe;color:#075985">${p} ${n}</span>`).join(' ')
-        +` <span style="color:#6b7280">共 ${Object.values(d.newAcc).reduce((a,b)=>a+b,0)} 個</span>`
-      : '<span style="color:#d1d5db">—</span>';
-    return `<tr>
-      <td style="white-space:nowrap;font-weight:500">${d.date}</td>
-      <td>${d.matches||'<span style="color:#d1d5db">—</span>'}</td>
-      <td>${d.lots?`<strong style="color:#1F3864">${d.lots}</strong> 口`:'<span style="color:#d1d5db">—</span>'}</td>
-      <td>${newTxt}</td>
-      <td>${d.win?`<span class="badge bwin">升級 ${d.win}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
-      <td>${d.dead?`<span class="badge blose">淘汰 ${d.dead}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
-      <td>${d.wdCount?`<span class="badge" style="background:#ede9fe;color:#5b21b6">${d.wdCount} 筆 ${usd(d.wdAmt)}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
-    </tr>`;
-  }).join('');
-
-  // 對沖明細（依所選日期過濾）
-  const det=[...matches].filter(m=>pick==='__ALL__'||!pick||m.date===pick).sort((a,b)=>dkey(b.date)-dkey(a.date));
+  // 交易明細（依所選日期過濾）
+  const det=matches.filter(m=>pick==='__ALL__'||!pick||m.date===pick).sort((a,b)=>dkey(b.date)-dkey(a.date));
   document.getElementById('daily-detail-empty').style.display=det.length?'none':'block';
   detBody.innerHTML=det.map(m=>{
     const rs=m.results||[];
-    const combo=rs.map(r=>`<span style="white-space:nowrap"><strong>${r.owner}</strong>·${r.plat}·<code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">${r.acc}</code><span style="font-size:10px;color:#9ca3af"> ${r.oldStatus||''}</span></span>`).join(' <span style="color:#9ca3af">vs</span> ');
+    const combo=rs.map(r=>`<span style="white-space:nowrap"><strong>${r.owner}</strong>·${r.plat}·<code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">${r.acc}</code><span style="font-size:10px;color:#9ca3af"> ${r.oldStatus||''}${num(r.lots)?' '+num(r.lots)+'口':''}</span></span>`).join(' <span style="color:#9ca3af">vs</span> ');
     const wins=rs.filter(r=>r.result==='勝').map(r=>`<span class="badge bwin">${r.owner}·${r.acc} → ${r.newStatus}</span>`).join(' ')||'<span style="color:#d1d5db">—</span>';
     const loses=rs.filter(r=>r.result!=='勝').map(r=>`<span class="badge ${r.result==='敗（保留）'?'bkeep':'blose'}">${r.owner}·${r.acc} → ${r.newStatus}</span>`).join(' ')||'<span style="color:#d1d5db">—</span>';
     const stage=m.stage||[...new Set(rs.map(r=>r.oldStatus).filter(Boolean))].join(' / ');
+    const lt=lotsLabel(m);
     return `<tr>
       <td style="white-space:nowrap">${m.date||''}</td>
       <td>${stage?`<span class="badge" style="background:#eef2ff;color:#3730a3">${stage}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
       <td>${combo}${m.note?`<div style="font-size:11px;color:#9ca3af;margin-top:2px">${m.note}</div>`:''}</td>
-      <td style="white-space:nowrap">${m.lots?`<strong>${m.lots}</strong> 口`:'<span style="color:#d1d5db">—</span>'}</td>
+      <td style="white-space:nowrap">${lt?`<strong>${lt}</strong> 口`:'<span style="color:#d1d5db">—</span>'}</td>
       <td>${wins}</td>
       <td>${loses}</td>
     </tr>`;
@@ -898,12 +899,11 @@ function renderDailyMatrix(date){
     box.innerHTML=`<div class="empty" style="padding:20px;background:#fff;border-radius:10px">請選擇單一日期以查看當日各人帳號狀態</div>`;
     return;
   }
-  // key: owner|plat → 當日事件
   const cell={};
   const put=(o,p,item)=>{ const k=o+'|'+p; (cell[k]=cell[k]||[]).push(item); };
 
-  (S.ledger||[]).filter(m=>m.type==='對沖'&&m.date===date).forEach(m=>{
-    (m.results||[]).forEach(r=>put(r.owner,r.plat,{kind:'match',code:r.acc,from:r.oldStatus,to:r.newStatus,result:r.result,lots:m.lots}));
+  (S.ledger||[]).filter(m=>isTrade(m)&&m.date===date).forEach(m=>{
+    (m.results||[]).forEach(r=>put(r.owner,r.plat,{kind:'match',code:r.acc,from:r.oldStatus,to:r.newStatus,result:r.result,lots:num(r.lots)||num(m.lots)}));
   });
   (S.accounts||[]).filter(a=>a.createdAt===date).forEach(a=>put(a.owner,a.platform,{kind:'new',code:a.code,to:a.status}));
   (S.withdrawals||[]).filter(w=>w.date===date).forEach(w=>put(w.owner,w.platform,{kind:'wd',code:w.code,amt:w.withdrawAmount}));
@@ -916,11 +916,12 @@ function renderDailyMatrix(date){
     const bg=i===0?'#1A5276':(i===1?'#145A32':'#7D6608');
     h+=`<th style="background:${bg};color:#fff;padding:8px 12px;text-align:center;min-width:150px">${p}</th>`;
   });
-  h+=`</tr></thead><tbody>`;
+  h+=`<th style="background:#F39C12;color:#fff;padding:8px 12px;text-align:center;min-width:70px">當日口數</th></tr></thead><tbody>`;
 
   let anyData=false;
   (S.members||[]).forEach((mName,mi)=>{
     const bg=mi%2===0?'#fff':'#f9fafb';
+    let rowLots=0;
     h+=`<tr><td style="background:${bg};padding:8px 12px;font-weight:600;position:sticky;left:0;border-bottom:1px solid #f0f0f0;border-right:1px solid #e5e7eb">${mName}</td>`;
     plats.forEach(p=>{
       const items=cell[mName+'|'+p]||[];
@@ -929,10 +930,11 @@ function renderDailyMatrix(date){
       if(!items.length){ h+=`<div style="text-align:center;color:#d1d5db">—</div>`; }
       items.forEach(it=>{
         if(it.kind==='match'){
+          rowLots+=num(it.lots);
           const cls=it.result==='勝'?'bwin':(it.result==='敗（保留）'?'bkeep':'blose');
           h+=`<div style="margin-bottom:5px;line-height:1.5">
             <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px;font-size:11px">${it.code}</code>
-            <span class="badge ${cls}" style="margin-left:4px">${it.result}</span>${it.lots?`<span style="font-size:10px;color:#6b7280;margin-left:3px">${it.lots}口</span>`:''}
+            <span class="badge ${cls}" style="margin-left:4px">${it.result}</span>${num(it.lots)?`<span class="badge" style="background:#fff7ed;color:#9a3412;margin-left:3px">${num(it.lots)} 口</span>`:''}
             <div style="font-size:10px;color:#6b7280;margin-top:1px">${it.from||''} → <strong style="color:#1F3864">${it.to||''}</strong></div>
           </div>`;
         } else if(it.kind==='new'){
@@ -950,10 +952,147 @@ function renderDailyMatrix(date){
       });
       h+=`</td>`;
     });
-    h+=`</tr>`;
+    h+=`<td style="background:${rowLots?'#FFF9C4':bg};text-align:center;font-weight:700;color:${rowLots?'#7D6608':'#d1d5db'};border-bottom:1px solid #f0f0f0;border-left:1px solid #f0f0f0">${rowLots||'—'}</td></tr>`;
   });
   h+=`</tbody></table></div>`;
   box.innerHTML = anyData ? h : `<div class="empty" style="padding:20px;background:#fff;border-radius:10px">${date} 無帳號異動紀錄</div>`;
+}
+
+// ── 近一週下單狀況（人 × 日期）────────────────────────────
+function weekDays(offset){
+  const base=new Date(); base.setHours(0,0,0,0);
+  base.setDate(base.getDate()+offset*7);
+  const out=[];
+  for(let i=6;i>=0;i--){ const d=new Date(base); d.setDate(base.getDate()-i); out.push(d); }
+  return out;
+}
+function renderWeekMatrix(matches){
+  const box=document.getElementById('week-matrix'); if(!box) return;
+  const days=weekDays(weekOffset);
+  const keys=days.map(d=>d.toLocaleDateString('zh-TW'));
+  const lbl=document.getElementById('week-label');
+  if(lbl) lbl.textContent=`${keys[0]} ～ ${keys[6]}`+(weekOffset===0?'（本週）':'');
+
+  // owner|date → 交易項目
+  const cell={};
+  matches.forEach(m=>{
+    if(!keys.includes(m.date)) return;
+    (m.results||[]).forEach(r=>{
+      const k=r.owner+'|'+m.date;
+      (cell[k]=cell[k]||[]).push({plat:r.plat,code:r.acc,result:r.result,to:r.newStatus,lots:num(r.lots)||num(m.lots)});
+    });
+  });
+
+  let h=`<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+  <table style="border-collapse:collapse;width:100%;font-size:12px;min-width:820px"><thead><tr>
+    <th style="background:#1F3864;color:#fff;padding:8px 12px;text-align:left;position:sticky;left:0;z-index:2;min-width:70px">持有人</th>`;
+  const wk=['日','一','二','三','四','五','六'];
+  days.forEach((d,i)=>{
+    const isToday=d.toLocaleDateString('zh-TW')===todayStr();
+    h+=`<th style="background:${isToday?'#F39C12':'#2E75B6'};color:#fff;padding:6px 8px;text-align:center;min-width:100px">
+      ${d.getMonth()+1}/${d.getDate()}<div style="font-size:10px;opacity:.85">週${wk[d.getDay()]}</div></th>`;
+  });
+  h+=`<th style="background:#E67E22;color:#fff;padding:6px 8px;text-align:center;min-width:80px">本週<div style="font-size:10px;opacity:.85">場次 / 口數</div></th></tr></thead><tbody>`;
+
+  (S.members||[]).forEach((mName,mi)=>{
+    const bg=mi%2===0?'#fff':'#f9fafb';
+    let wCnt=0,wLots=0;
+    h+=`<tr><td style="background:${bg};padding:8px 12px;font-weight:600;position:sticky;left:0;border-bottom:1px solid #f0f0f0;border-right:1px solid #e5e7eb">${mName}</td>`;
+    keys.forEach(k=>{
+      const items=cell[mName+'|'+k]||[];
+      wCnt+=items.length;
+      items.forEach(it=>wLots+=num(it.lots));
+      h+=`<td style="background:${bg};padding:5px 6px;border-bottom:1px solid #f0f0f0;border-left:1px solid #f0f0f0;vertical-align:top;text-align:center">`;
+      if(!items.length) h+=`<span style="color:#d1d5db">—</span>`;
+      items.forEach(it=>{
+        const cls=it.result==='勝'?'bwin':(it.result==='敗（保留）'?'bkeep':'blose');
+        h+=`<div style="margin-bottom:4px;line-height:1.4">
+          <div><span style="font-size:10px;color:#6b7280">${it.plat}</span> <code style="background:#f3f4f6;padding:1px 5px;border-radius:4px;font-size:11px">${it.code}</code></div>
+          <div><span class="badge ${cls}" style="font-size:10px">${it.result}</span>${num(it.lots)?`<span class="badge" style="background:#fff7ed;color:#9a3412;font-size:10px">${num(it.lots)}口</span>`:''}</div>
+        </div>`;
+      });
+      h+=`</td>`;
+    });
+    h+=`<td style="background:${wCnt?'#FFF9C4':bg};text-align:center;font-weight:700;color:${wCnt?'#7D6608':'#d1d5db'};border-bottom:1px solid #f0f0f0;border-left:1px solid #f0f0f0">${wCnt?`${wCnt} 場<div style="font-size:11px">${wLots} 口</div>`:'—'}</td></tr>`;
+  });
+  h+=`</tbody></table></div>`;
+  box.innerHTML=h;
+}
+
+
+// ── 流水帳編輯 ────────────────────────────────────────────
+function editLedger(i){
+  const m=S.ledger[i]; if(!m) return;
+  const allOpts=[...STATUS_LIST,'已淘汰'];
+  const resultOpts=['勝','敗（淘汰）','敗（保留）'];
+  let rowsHtml='';
+  (m.results||[]).forEach((r,ri)=>{
+    if(isTrade(m)){
+      rowsHtml+=`<div class="acc-result-row">
+        <div style="grid-column:span 4;font-size:12px;font-weight:600;color:#1F3864">${r.owner||''} · ${r.plat||''} · ${r.acc||''}
+          <span style="font-weight:400;color:#9ca3af;font-size:11px">（原狀態 ${r.oldStatus||'—'}）</span></div>
+        <div style="grid-column:span 2"><label>結果</label><select id="el-res-${ri}">${resultOpts.map(o=>`<option ${o===r.result?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div><label>口數</label><input type="text" id="el-lots-${ri}" value="${r.lots||''}" /></div>
+        <div><label>餘額 (USD)</label><input type="text" id="el-bal-${ri}" value="${r.balance||''}" /></div>
+        <div style="grid-column:span 4"><label>新狀態</label><select id="el-st-${ri}">${allOpts.map(o=>`<option ${o===r.newStatus?'selected':''}>${o}</option>`).join('')}</select></div>
+      </div>`;
+    } else {
+      rowsHtml+=`<div class="acc-result-row">
+        <div style="grid-column:span 4;font-size:12px;font-weight:600;color:#1F3864">${r.owner||''} · ${r.plat||''} · ${r.acc||''}</div>
+        <div style="grid-column:span 2"><label>說明</label><input type="text" id="el-desc-${ri}" value="${(r.newStatus||'').replace(/"/g,'&quot;')}" /></div>
+        <div><label>異動前</label><input type="text" id="el-old-${ri}" value="${r.oldBalance||''}" /></div>
+        <div><label>異動後</label><input type="text" id="el-bal-${ri}" value="${r.balance||''}" /></div>
+      </div>`;
+    }
+  });
+  document.getElementById('modal-body').innerHTML=`<h2>編輯流水帳紀錄</h2>
+    <p style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:12px">
+      ⚠ 這裡只修改「紀錄本身」，不會回頭改動帳號目前的狀態與餘額。帳號現況請到帳號總覽點該帳號調整。</p>
+    <div class="two-col">
+      <div class="form-row"><label>日期</label><input type="text" id="el-date" value="${m.date||''}" /></div>
+      <div class="form-row"><label>類型</label><input type="text" value="${m.type==='對沖'?'交易':(m.type||'交易')}" disabled style="background:#f9fafb" /></div>
+    </div>
+    <div class="form-row"><label>備註</label><input type="text" id="el-note" value="${(m.note||'').replace(/"/g,'&quot;')}" placeholder="選填" /></div>
+    ${rowsHtml||'<p style="font-size:12px;color:#9ca3af">此筆無明細</p>'}
+    <div class="form-actions">
+      <button class="btn btn-d" onclick="deleteLedger(${i})">刪除此筆</button>
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" onclick="saveLedger(${i})">儲存</button>
+    </div>`;
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function saveLedger(i){
+  const m=S.ledger[i]; if(!m) return;
+  m.date=(document.getElementById('el-date').value||'').trim();
+  m.note=(document.getElementById('el-note').value||'').trim();
+  (m.results||[]).forEach((r,ri)=>{
+    const bal=document.getElementById('el-bal-'+ri);
+    if(bal) r.balance=bal.value.trim();
+    if(isTrade(m)){
+      const res=document.getElementById('el-res-'+ri), stt=document.getElementById('el-st-'+ri), lt=document.getElementById('el-lots-'+ri);
+      if(res) r.result=res.value;
+      if(stt) r.newStatus=stt.value;
+      if(lt)  r.lots=lt.value.trim();
+    } else {
+      const dsc=document.getElementById('el-desc-'+ri), old=document.getElementById('el-old-'+ri);
+      if(dsc) r.newStatus=dsc.value.trim();
+      if(old) r.oldBalance=old.value.trim();
+    }
+  });
+  if(isTrade(m)){
+    m.lots=String((m.results||[]).reduce((s,r)=>s+num(r.lots),0)||'');
+    m.stage=[...new Set((m.results||[]).map(r=>r.oldStatus).filter(Boolean))].join(' / ');
+  }
+  persist(); closeModal(); render();
+  toast('流水帳已更新 ✓');
+}
+
+function deleteLedger(i){
+  if(!confirm('確定刪除這筆流水帳紀錄？（不會影響帳號目前狀態）')) return;
+  S.ledger.splice(i,1);
+  persist(); closeModal(); render();
+  toast('已刪除 ✓');
 }
 
 // ── 每人出金次數（依平台）──────────────────────────────────
@@ -1093,7 +1232,7 @@ function openModal(type, arg1='', arg2=''){
 
 function buildMatchModal(body){
   const platOpts=S.platforms.map(p=>`<option>${p}</option>`).join('');
-  body.innerHTML=`<h2>記錄對沖結果</h2>
+  body.innerHTML=`<h2>記錄交易結果</h2>
     <div class="two-col">
       <div class="form-row"><label>日期</label><input type="text" id="m-date" value="${todayStr()}" /></div>
       <div class="form-row"><label>參與帳號數量</label>
@@ -1105,8 +1244,7 @@ function buildMatchModal(body){
       </div>
     </div>
     <div class="two-col">
-      <div class="form-row"><label>口數（本場對沖）</label><input type="text" id="m-lots" placeholder="例如 5" /></div>
-      <div class="form-row"><label>備註</label><input type="text" id="m-note" placeholder="選填" /></div>
+      <div class="form-row" style="grid-column:span 2"><label>備註</label><input type="text" id="m-note" placeholder="選填" /></div>
     </div>
     <div id="acc-rows-container"></div>
     <div class="form-actions">
@@ -1123,7 +1261,7 @@ function buildAccRows(){
   const nameOpts=S.members.map(n=>`<option>${n}</option>`).join('');
   const platOpts=S.platforms.map(p=>`<option>${p}</option>`).join('');
 
-  let html='<div style="margin-bottom:8px;font-size:12px;color:#6b7280">填入每個帳號的對沖結果</div>';
+  let html='<div style="margin-bottom:8px;font-size:12px;color:#6b7280">填入每個帳號的交易結果與口數</div>';
   for(let i=0;i<count;i++){
     const statusOpts=STATUS_LIST.map(s=>`<option>${s}</option>`).join('');
     const resultOpts=`<option>勝</option><option>敗（淘汰）</option><option>敗（保留）</option>`;
@@ -1148,7 +1286,11 @@ function buildAccRows(){
         <label>新狀態</label>
         <select id="r-newstatus-${i}">${statusOpts}</select>
       </div>
-      <div style="grid-column:span 2">
+      <div>
+        <label>口數</label>
+        <input type="text" id="r-lots-${i}" placeholder="例如 5" />
+      </div>
+      <div>
         <label>餘額 (USD)</label>
         <input type="text" id="r-bal-${i}" placeholder="0.00" />
       </div>
@@ -1188,7 +1330,6 @@ function updateRowNewStatus(i){
 
 function recordMatch(){
   const date=document.getElementById('m-date').value;
-  const lots=(document.getElementById('m-lots')?.value||'').trim();
   const note=(document.getElementById('m-note')?.value||'').trim();
   const count=parseInt(document.getElementById('m-count').value)||2;
   const results=[];
@@ -1198,6 +1339,7 @@ function recordMatch(){
     const result=document.getElementById(`r-result-${i}`).value;
     const newStatus=document.getElementById(`r-newstatus-${i}`).value;
     const bal=document.getElementById(`r-bal-${i}`).value.trim();
+    const rlots=(document.getElementById(`r-lots-${i}`)?.value||'').trim();
     const owner=document.getElementById(`r-owner-${i}`).value;
     const plat=document.getElementById(`r-plat-${i}`).value;
     platSet.add(plat);
@@ -1210,20 +1352,21 @@ function recordMatch(){
     acc.statusChangedAt=new Date().toISOString();
     if(bal) acc.balance=bal;
     if(newStatus==='已淘汰') acc.balance='';
-    results.push({owner, plat, acc:acc.code, oldStatus, newStatus, result, balance:bal});
+    results.push({owner, plat, acc:acc.code, oldStatus, newStatus, result, balance:bal, lots:rlots});
   }
   const stages=[...new Set(results.map(r=>r.oldStatus).filter(Boolean))];
   if(!S.ledger) S.ledger=[];
   S.ledger.push({
     id:Date.now()+'', date,
-    type:'對沖',
+    type:'交易',
     platforms:[...platSet].join(' vs '),
-    lots, note,
+    lots: String(results.reduce((s,r)=>s+(parseFloat(r.lots)||0),0)||''),
+    note,
     stage: stages.join(' / '),
     results
   });
   persist(); closeModal(); render();
-  toast('對沖結果已記錄 ✓');
+  toast('交易結果已記錄 ✓');
 }
 
 function openAccModal(id){
@@ -1427,6 +1570,7 @@ function saveAcc(id){
     // 提款中／有洗：餘額即為「有洗」金額，兩者同步
     if(newStatus==='提款中'||newStatus==='有洗') newBalance=newYoxi;
     acc.balance=newBalance;
+    if(newStatus!=='提款中'&&newStatus!=='有洗') acc.yoxiBalance='';
     if(newStatus==='已完成提款'){ acc.withdrawAmount=''; }
     if(newStatus==='已淘汰'){ acc.balance=''; acc.withdrawAmount=''; acc.yoxiBalance=''; }
     // 記錄餘額異動到流水帳
