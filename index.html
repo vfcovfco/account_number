@@ -469,6 +469,10 @@ function renderStats(){
   const yoxiTotal=yoxiAccs.reduce((sum,a)=>sum+yoxiAmt(a),0);
   const yoxiStr=yoxiTotal>0?'$'+yoxiTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   const yoxiCount=yoxiAccs.length;
+  // 出金1~5 ＋ 有洗 餘額合計
+  const actAccs=alive.filter(isActiveBal);
+  const actTotal=sumActiveBal(alive);
+  const actStr=actTotal?'$'+actTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   // 已完成提款：所有提款紀錄加總
   const doneTotal=(S.withdrawals||[]).reduce((sum,w)=>sum+(parseFloat(w.withdrawAmount)||0),0);
   const doneStr=doneTotal>0?'$'+doneTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
@@ -479,6 +483,7 @@ function renderStats(){
     ["出金0",ex0],
     ["出金中",ex15],
   ].map(([l,v])=>`<div class="stat"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join('')
+  +`<div class="stat" style="border:2px solid #F39C12"><div class="stat-label">出金1~5＋有洗 餘額 (USD)</div><div class="stat-val" style="font-size:16px;color:#B7791F">${actStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${actAccs.length} 個帳號</div></div>`
   +`<div class="stat"><div class="stat-label">提款中 (USD)</div><div class="stat-val" style="font-size:16px;color:#6A1B9A">${withdrawStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${withdrawCount} 個帳號</div></div>`
   +`<div class="stat"><div class="stat-label">有洗餘額 (USD)</div><div class="stat-val" style="font-size:16px;color:#166534">${yoxiStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${yoxiCount} 個帳號</div></div>`
   +`<div class="stat"><div class="stat-label">已完成提款 (USD)</div><div class="stat-val" style="font-size:16px;color:#283593">${doneStr}</div><div style="font-size:11px;color:#9ca3af;margin-top:2px">${doneCount} 筆記錄</div></div>`;
@@ -508,6 +513,11 @@ function dimAccs(dim){
     (num(a.withdrawAmount)>0 || a.status==='提款中'));
 }
 function yoxiAmt(a){ return num(a.yoxiBalance)||num(a.balance); }
+// 出金1~5 ＋ 有洗：實際在場上運作的餘額
+const ACTIVE_BAL_STATUS=["出金1（有300+1）","出金2（有300+2）","出金3（有300+3）","出金4（有300+4）","出金5（有300+5）","有洗"];
+function isActiveBal(a){ return ACTIVE_BAL_STATUS.includes(a.status); }
+function activeBal(a){ return a.status==='有洗' ? yoxiAmt(a) : num(a.balance); }
+function sumActiveBal(list){ return (list||[]).filter(isActiveBal).reduce((s,a)=>s+activeBal(a),0); }
 
 // 提款中 / 有洗 區塊
 function splitBlock(dim){
@@ -678,6 +688,20 @@ function renderByPerson(container){
     html+=`<td style="background:${totalBg};color:${totalColor};padding:7px 10px;text-align:center;font-weight:600;border-bottom:1px solid #f0f0f0;border-left:2px solid #e5e7eb">${total>0?total:'—'}</td>`;
     html+=`</tr>`;
   });
+
+  // 出金1~5＋有洗 餘額合計列
+  html+=`<tr style="background:#FEF9E7">
+    <td style="padding:7px 12px;font-weight:600;font-size:11px;color:#B7791F;position:sticky;left:0;background:#FEF9E7;border-top:2px solid #F39C12;z-index:1">出金1~5＋有洗 餘額</td>`;
+  let balGrand=0;
+  S.members.forEach(name=>{
+    S.platforms.forEach(plat=>{
+      const v=sumActiveBal(alive.filter(a=>a.owner===name&&a.platform===plat));
+      balGrand+=v;
+      const borderLeft = plat===S.platforms[0] ? '2px solid #e5e7eb' : '1px solid #f0f0f0';
+      html+=`<td style="padding:7px 6px;text-align:center;font-size:11px;font-weight:600;border-top:2px solid #F39C12;border-left:${borderLeft};color:${v?'#B7791F':'#d1d5db'}">${v?'$'+Math.round(v).toLocaleString('en-US'):'—'}</td>`;
+    });
+  });
+  html+=`<td style="padding:7px 6px;text-align:center;font-weight:700;font-size:11px;border-top:2px solid #F39C12;border-left:2px solid #e5e7eb;background:#F39C12;color:#fff">$${Math.round(balGrand).toLocaleString('en-US')}</td></tr>`;
 
   // Column totals row
   html+=`<tr style="background:#FFF9C4">
@@ -973,47 +997,76 @@ function renderWeekMatrix(matches){
   const lbl=document.getElementById('week-label');
   if(lbl) lbl.textContent=`${keys[0]} ～ ${keys[6]}`+(weekOffset===0?'（本週）':'');
 
-  // owner|date → 交易項目
+  // owner|plat|date → 交易項目
   const cell={};
   matches.forEach(m=>{
     if(!keys.includes(m.date)) return;
     (m.results||[]).forEach(r=>{
-      const k=r.owner+'|'+m.date;
-      (cell[k]=cell[k]||[]).push({plat:r.plat,code:r.acc,result:r.result,to:r.newStatus,lots:num(r.lots)||num(m.lots)});
+      const k=r.owner+'|'+r.plat+'|'+m.date;
+      (cell[k]=cell[k]||[]).push({code:r.acc,result:r.result,to:r.newStatus,lots:num(r.lots)||num(m.lots)});
     });
   });
 
-  let h=`<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
-  <table style="border-collapse:collapse;width:100%;font-size:12px;min-width:820px"><thead><tr>
-    <th style="background:#1F3864;color:#fff;padding:8px 12px;text-align:left;position:sticky;left:0;z-index:2;min-width:70px">持有人</th>`;
+  const plats=S.platforms||[];
   const wk=['日','一','二','三','四','五','六'];
-  days.forEach((d,i)=>{
+  let h=`<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+  <table style="border-collapse:collapse;width:100%;font-size:12px;min-width:900px"><thead><tr>
+    <th style="background:#1F3864;color:#fff;padding:8px 10px;text-align:left;min-width:64px">持有人</th>
+    <th style="background:#2E75B6;color:#fff;padding:8px 8px;text-align:center;min-width:46px">平台</th>`;
+  days.forEach(d=>{
     const isToday=d.toLocaleDateString('zh-TW')===todayStr();
-    h+=`<th style="background:${isToday?'#F39C12':'#2E75B6'};color:#fff;padding:6px 8px;text-align:center;min-width:100px">
+    h+=`<th style="background:${isToday?'#F39C12':'#2E75B6'};color:#fff;padding:6px 8px;text-align:center;min-width:96px">
       ${d.getMonth()+1}/${d.getDate()}<div style="font-size:10px;opacity:.85">週${wk[d.getDay()]}</div></th>`;
   });
-  h+=`<th style="background:#E67E22;color:#fff;padding:6px 8px;text-align:center;min-width:80px">本週<div style="font-size:10px;opacity:.85">場次 / 口數</div></th></tr></thead><tbody>`;
+  h+=`<th style="background:#E67E22;color:#fff;padding:6px 8px;text-align:center;min-width:76px">本週<div style="font-size:10px;opacity:.85">場次 / 口數</div></th></tr></thead><tbody>`;
 
   (S.members||[]).forEach((mName,mi)=>{
     const bg=mi%2===0?'#fff':'#f9fafb';
-    let wCnt=0,wLots=0;
-    h+=`<tr><td style="background:${bg};padding:8px 12px;font-weight:600;position:sticky;left:0;border-bottom:1px solid #f0f0f0;border-right:1px solid #e5e7eb">${mName}</td>`;
-    keys.forEach(k=>{
-      const items=cell[mName+'|'+k]||[];
-      wCnt+=items.length;
-      items.forEach(it=>wLots+=num(it.lots));
-      h+=`<td style="background:${bg};padding:5px 6px;border-bottom:1px solid #f0f0f0;border-left:1px solid #f0f0f0;vertical-align:top;text-align:center">`;
-      if(!items.length) h+=`<span style="color:#d1d5db">—</span>`;
-      items.forEach(it=>{
-        const cls=it.result==='勝'?'bwin':(it.result==='敗（保留）'?'bkeep':'blose');
-        h+=`<div style="margin-bottom:4px;line-height:1.4">
-          <div><span style="font-size:10px;color:#6b7280">${it.plat}</span> <code style="background:#f3f4f6;padding:1px 5px;border-radius:4px;font-size:11px">${it.code}</code></div>
-          <div><span class="badge ${cls}" style="font-size:10px">${it.result}</span>${num(it.lots)?`<span class="badge" style="background:#fff7ed;color:#9a3412;font-size:10px">${num(it.lots)}口</span>`:''}</div>
-        </div>`;
+    // 只列出本週有下單的平台；完全沒下單則顯示一列「—」
+    const actPlats=plats.filter(p=>keys.some(k=>(cell[mName+'|'+p+'|'+k]||[]).length));
+    const rows=actPlats.length?actPlats:[null];
+    let memCnt=0,memLots=0;
+    let body='';
+    rows.forEach((p,pi)=>{
+      let rCnt=0,rLots=0;
+      let tds='';
+      keys.forEach(k=>{
+        const items=p?(cell[mName+'|'+p+'|'+k]||[]):[];
+        rCnt+=items.length;
+        tds+=`<td style="background:${bg};padding:5px 6px;border-bottom:1px solid #f0f0f0;border-left:1px solid #f0f0f0;vertical-align:top;text-align:center">`;
+        if(!items.length) tds+=`<span style="color:#d1d5db">—</span>`;
+        items.forEach(it=>{
+          rLots+=num(it.lots);
+          const cls=it.result==='勝'?'bwin':(it.result==='敗（保留）'?'bkeep':'blose');
+          const lotTxt=num(it.lots)
+            ? `<span class="badge" style="background:#FDE68A;color:#7C2D12;font-weight:700">${num(it.lots)} 口</span>`
+            : `<span class="badge" style="background:#f3f4f6;color:#9ca3af">— 口</span>`;
+          tds+=`<div style="margin-bottom:5px;line-height:1.5">
+            <div style="margin-bottom:2px">${lotTxt}</div>
+            <div><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px;font-size:11px">${it.code}</code>
+              <span class="badge ${cls}" style="font-size:10px">${it.result}</span></div>
+          </div>`;
+        });
+        tds+=`</td>`;
       });
-      h+=`</td>`;
+      memCnt+=rCnt; memLots+=rLots;
+      const platBg = p ? (plats.indexOf(p)===0?'#1A5276':(plats.indexOf(p)===1?'#145A32':'#7D6608')) : '#9ca3af';
+      body+=`<tr>${pi===0?`<td rowspan="${rows.length}" style="background:${bg};padding:8px 10px;font-weight:600;border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb;vertical-align:middle">${mName}</td>`:''}
+        <td style="background:${bg};text-align:center;border-bottom:1px solid #f0f0f0;border-right:1px solid #e5e7eb">
+          ${p?`<span style="background:${platBg};color:#fff;padding:2px 7px;border-radius:5px;font-size:11px;font-weight:600">${p}</span>`:'<span style="color:#d1d5db">—</span>'}</td>
+        ${tds}
+        <td style="background:${rCnt?'#FFF9C4':bg};text-align:center;font-weight:700;color:${rCnt?'#7D6608':'#d1d5db'};border-bottom:1px solid #f0f0f0;border-left:1px solid #f0f0f0">${rCnt?`${rCnt} 場<div style="font-size:11px">${rLots} 口</div>`:'—'}</td>
+      </tr>`;
     });
-    h+=`<td style="background:${wCnt?'#FFF9C4':bg};text-align:center;font-weight:700;color:${wCnt?'#7D6608':'#d1d5db'};border-bottom:1px solid #f0f0f0;border-left:1px solid #f0f0f0">${wCnt?`${wCnt} 場<div style="font-size:11px">${wLots} 口</div>`:'—'}</td></tr>`;
+    // 該成員小計列（平台數 >1 才顯示）
+    if(rows.length>1){
+      body+=`<tr style="background:#F1F5F9">
+        <td colspan="2" style="padding:6px 10px;font-size:11px;font-weight:600;color:#334155;border-bottom:2px solid #e5e7eb;text-align:right">${mName} 小計</td>
+        <td colspan="${keys.length}" style="border-bottom:2px solid #e5e7eb"></td>
+        <td style="text-align:center;font-weight:700;color:#7D6608;border-bottom:2px solid #e5e7eb">${memCnt} 場<div style="font-size:11px">${memLots} 口</div></td>
+      </tr>`;
+    }
+    h+=body;
   });
   h+=`</tbody></table></div>`;
   box.innerHTML=h;
